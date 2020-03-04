@@ -1,3 +1,4 @@
 [submodule "oauth-in-action-code"]
 	path = oauth-in-action-code
 	url = https://github.com/oauthinaction/oauth-in-action-code.git
+	ignore = dirty

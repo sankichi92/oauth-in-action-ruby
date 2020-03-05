@@ -52,7 +52,8 @@ get '/callback' do
     redirect_uri: REDIRECT_URIS.first,
   )
 
-  if response.code == '200'
+  case response
+  when Net::HTTPSuccess
     body = JSON.parse(response.body)
     access_token = body['access_token']
 
@@ -72,7 +73,8 @@ get '/fetch_resource' do
   logger.info "Requesting protected resource with access token '#{access_token}'"
   response = http.post(protected_resource_uri.path, nil, headers)
 
-  if response.code == '200'
+  case response
+  when Net::HTTPSuccess
     response.body
   else
     access_token = nil

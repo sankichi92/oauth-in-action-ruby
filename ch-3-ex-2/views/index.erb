@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>Client</title>
+  </head>
+  <body>
+    <ul>
+      <li>Access token value: <%= access_token %></li>
+      <li>Scope value: <%= scope %></li>
+      <li>Refresh token value: <%= refresh_token %></li>
+    </ul>
+    <a href="/authorize">Get OAuth Token</a>
+    <a href="/fetch_resource">Get Protected Resource</a>
+  </body>
+</html>

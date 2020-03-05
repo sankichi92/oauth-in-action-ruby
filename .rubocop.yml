@@ -4,6 +4,9 @@ Metrics/LineLength:
 Style/FrozenStringLiteralComment:
   Enabled: false
 
+Style/GlobalVars:
+  Enabled: false
+
 Style/MutableConstant:
   Enabled: false
 

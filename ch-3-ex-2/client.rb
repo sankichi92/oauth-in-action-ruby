@@ -5,26 +5,20 @@ require 'uri'
 
 require 'sinatra'
 
-set :port, 9000
-
 AUTHORIZATION_ENDPOINT = 'http://localhost:9001/authorize'
 TOKEN_ENDPOINT = 'http://localhost:9001/token'
 
 CLIENT_ID = 'oauth-client-1'
 CLIENT_SECRET = 'oauth-client-secret-1'
 
-REDIRECT_URIS = %w[http://localhost:9000/callback]
+REDIRECT_URI = 'http://localhost:9000/callback'
 SCOPE = 'foo'
 
 PROTECTED_RESOURCE = 'http://localhost:9002/resource'
 
-configure do
-  $state = nil
+set :port, 9000
 
-  $access_token = '987tghjkiu6trfghjuytrghj'
-  $scope = nil
-  $refresh_token = 'j2r3oj32r23rmasd98uhjrk2o3i'
-end
+enable :sessions
 
 helpers do
   def fetch_and_save_access_token!(**params)
@@ -38,70 +32,98 @@ helpers do
 
     body = JSON.parse(response.body)
 
-    $refresh_token = body['refresh_token'] if body['refresh_token']
-    $access_token = body['access_token']
-    $scope = body['scope']
+    session[:refresh_token] = body['refresh_token'] if body['refresh_token']
+    session[:access_token] = body['access_token']
+    session[:scope] = body['scope']
   end
 end
 
+template :index do
+  <<~HTML
+    <!DOCTYPE html>
+    <html lang="en">
+      <head>
+        <title>Client</title>
+      </head>
+      <body>
+        <ul>
+          <li>Access token value: <%= session[:access_token] %></li>
+          <li>Scope value: <%= session[:scope] %></li>
+          <li>Refresh token value: <%= session[:refresh_token] %></li>
+        </ul>
+        <a href="/authorize">Get OAuth Token</a>
+        <a href="/fetch_resource">Get Protected Resource</a>
+      </body>
+    </html>
+  HTML
+end
+
+before do
+  session[:access_token] ||= '987tghjkiu6trfghjuytrghj'
+  session[:refresh_token] ||= 'j2r3oj32r23rmasd98uhjrk2o3i'
+end
+
 get '/' do
-  erb :index, locals: { access_token: $access_token, scope: $scope, refresh_token: $refresh_token }
+  erb :index
 end
 
 get '/authorize' do
-  $access_token = nil
+  session[:access_token] = nil
 
-  $scope = nil
-  $state = SecureRandom.urlsafe_base64
+  session[:scope] = nil
+  session[:state] = SecureRandom.urlsafe_base64
 
   query = build_query(
     response_type: 'code',
     scope: SCOPE,
     client_id: CLIENT_ID,
-    redirect_uri: REDIRECT_URIS.first,
-    state: $state,
+    redirect_uri: REDIRECT_URI,
+    state: session[:state],
   )
   redirect "#{AUTHORIZATION_ENDPOINT}?#{query}"
 end
 
 get '/callback' do
-  halt "State does not match: expected '#{$state}' got '#{params['state']}'" if params['state'] != $state
+  error 400, "State does not match: expected '#{session[:state]}' got '#{params[:state]}'" if session[:state].nil? || params[:state] != session[:state]
 
   begin
     fetch_and_save_access_token!(
       grant_type: 'authorization_code',
-      code: params['code'],
-      redirect_uri: REDIRECT_URIS.first,
+      code: params[:code],
+      redirect_uri: REDIRECT_URI,
     )
-    erb :index, locals: { access_token: $access_token, scope: $scope, refresh_token: $refresh_token }
+    erb :index
   rescue Net::HTTPExceptions => e
-    "Unable to fetch access token, server response: #{e.response.code}"
+    logger.error e
+    error "Unable to fetch access token, server response: #{e.response.code}"
   end
 end
 
 get '/fetch_resource' do
   protected_resource_uri = URI.parse(PROTECTED_RESOURCE)
   http = Net::HTTP.new(protected_resource_uri.host, protected_resource_uri.port)
-  headers = { 'Authorization' => "Bearer #{$access_token}" }
+  headers = { 'Authorization' => "Bearer #{session[:access_token]}" }
 
-  logger.info "Requesting protected resource with access token: #{$access_token}"
+  logger.info "Requesting protected resource with access token: #{session[:access_token]}"
   response = http.post(protected_resource_uri.path, nil, headers)
 
   if response.is_a?(Net::HTTPSuccess)
     response.body
-  elsif response.is_a?(Net::HTTPUnauthorized) && $refresh_token
-    $access_token = nil
+  elsif response.is_a?(Net::HTTPUnauthorized) && session[:refresh_token]
+    session[:access_token] = nil
     begin
       fetch_and_save_access_token!(
         grant_type: 'refresh_token',
-        refresh_token: $refresh_token,
+        refresh_token: session[:refresh_token],
       )
       redirect to('/fetch_resource')
     rescue Net::HTTPExceptions => e
-      $refresh_token = nil
-      "Unable to refresh access token, server response: #{e.response.code}"
+      session[:refresh_token] = nil
+      logger.error e
+      error "Unable to refresh access token, server response: #{e.response.code}"
     end
   else
-    "Unable to fetch resource, server response: #{response.code}"
+    logger.error response.inspect
+    error "Unable to fetch resource, server response: #{response.code}"
   end
 end

@@ -11,6 +11,15 @@ set :port, 9002
 
 enable :method_override
 
+helpers do
+  def require_scope(scope)
+    unless @access_token.scope.include?(scope)
+      headers 'WWW-Authenticate' => %(Bearer realm=#{settings.bind}:#{settings.port}, error="insufficient_scope", scope="#{scope}")
+      error 403
+    end
+  end
+end
+
 before do
   token = request.env['HTTP_AUTHORIZATION']&.slice(%r{^Bearer +([a-z0-9\-._‾+/]+=*)}i, 1) || params[:access_token]
   logger.info "Incoming token: #{token}"
@@ -29,18 +38,18 @@ end
 $words = []
 
 get '/words' do
-  # TODO
+  require_scope 'read'
   json words: $words.join(' '), timestamp: Time.now.to_i
 end
 
 post '/words' do
-  # TODO
+  require_scope 'write'
   $words.push(params[:word]) if params[:word]
   halt 201
 end
 
 delete '/words' do
-  # TODO
+  require_scope 'delete'
   $words.pop
   halt 204
 end

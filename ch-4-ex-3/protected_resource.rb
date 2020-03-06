@@ -15,17 +15,6 @@ AccessToken = Struct.new(:access_token, :scope)
 
 set :port, 9002
 
-enable :method_override
-
-helpers do
-  def require_scope(scope)
-    unless @access_token.scope.include?(scope)
-      headers 'WWW-Authenticate' => %(Bearer realm=#{settings.bind}:#{settings.port}, error="insufficient_scope", scope="#{scope}")
-      halt 403
-    end
-  end
-end
-
 before do
   token = request.env['HTTP_AUTHORIZATION']&.slice(%r{^Bearer +([a-z0-9\-._‾+/]+=*)}i, 1) || params[:access_token]
   logger.info "Incoming token: #{token}"

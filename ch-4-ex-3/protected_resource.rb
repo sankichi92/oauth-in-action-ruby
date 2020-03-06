@@ -42,6 +42,5 @@ before do
 end
 
 get '/produce' do
-  # TODO
-  json PRODUCE
+  json PRODUCE.slice(*@access_token.scope.map(&:to_sym))
 end

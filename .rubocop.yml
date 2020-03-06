@@ -10,6 +10,9 @@ Style/FrozenStringLiteralComment:
 Style/GlobalVars:
   Enabled: false
 
+Style/GuardClause:
+  Enabled: false
+
 Style/MutableConstant:
   Enabled: false
 

@@ -84,7 +84,7 @@ get '/authorize' do
 end
 
 get '/callback' do
-  error 400, "State does not match: expected '#{session[:state]}' got '#{params[:state]}'" if session[:state].nil? || params[:state] != session[:state]
+  halt 400, "State does not match: expected '#{session[:state]}' got '#{params[:state]}'" if session[:state].nil? || params[:state] != session[:state]
 
   begin
     fetch_and_save_access_token!(

@@ -53,7 +53,7 @@ get '/authorize' do
 end
 
 get '/callback' do
-  error 400, "State does not match: expected '#{session[:state]}' got '#{params[:state]}'" if session[:state].nil? || params[:state] != session[:state]
+  halt 400, "State does not match: expected '#{session[:state]}' got '#{params[:state]}'" if session[:state].nil? || params[:state] != session[:state]
 
   token_uri = URI.parse(TOKEN_ENDPOINT)
   token_uri.user = CLIENT_ID
@@ -79,7 +79,7 @@ get '/callback' do
 end
 
 get '/fetch_resource' do
-  error 401, 'Missing access token' if session[:access_token].nil?
+  halt 401, 'Missing access token' if session[:access_token].nil?
 
   protected_resource_uri = URI.parse(PROTECTED_RESOURCE)
   http = Net::HTTP.new(protected_resource_uri.host, protected_resource_uri.port)

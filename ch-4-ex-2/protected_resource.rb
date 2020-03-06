@@ -15,7 +15,7 @@ helpers do
   def require_scope(scope)
     unless @access_token.scope.include?(scope)
       headers 'WWW-Authenticate' => %(Bearer realm=#{settings.bind}:#{settings.port}, error="insufficient_scope", scope="#{scope}")
-      error 403
+      halt 403
     end
   end
 end
@@ -23,7 +23,7 @@ end
 before do
   token = request.env['HTTP_AUTHORIZATION']&.slice(%r{^Bearer +([a-z0-9\-._‾+/]+=*)}i, 1) || params[:access_token]
   logger.info "Incoming token: #{token}"
-  error 401 if token.nil?
+  halt 401 if token.nil?
 
   File.open(DATA_PATH).each do |line|
     access_token_hash = JSON.parse(line)
@@ -32,7 +32,7 @@ before do
       break
     end
   end
-  error 401 if @access_token.nil?
+  halt 401 if @access_token.nil?
 end
 
 $words = []

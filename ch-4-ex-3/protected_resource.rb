@@ -3,7 +3,13 @@ require 'json'
 require 'sinatra'
 require 'sinatra/json'
 
-DATA_PATH = File.expand_path('../oauth-in-action-code/exercises/ch-4-ex-2/database.nosql', __dir__)
+DATA_PATH = File.expand_path('../oauth-in-action-code/exercises/ch-4-ex-3/database.nosql', __dir__)
+
+PRODUCE = {
+  fruit: %w[apple banana kiwi],
+  veggies: %w[lettuce onion potato],
+  meats: %w[bacon steak chicken\ breast],
+}
 
 AccessToken = Struct.new(:access_token, :scope)
 
@@ -35,21 +41,7 @@ before do
   halt 401 if @access_token.nil?
 end
 
-$words = []
-
-get '/words' do
-  require_scope 'read'
-  json words: $words.join(' '), timestamp: Time.now.to_i
-end
-
-post '/words' do
-  require_scope 'write'
-  $words.push(params[:word]) if params[:word]
-  halt 201
-end
-
-delete '/words' do
-  require_scope 'delete'
-  $words.pop
-  halt 204
+get '/produce' do
+  # TODO
+  json PRODUCE
 end

@@ -23,7 +23,7 @@ FAVORITES = {
   },
 }
 
-AccessToken = Struct.new(:access_token, :scope)
+AccessToken = Struct.new(:access_token, :scope, :user, keyword_init: true)
 
 set :port, 9002
 
@@ -33,9 +33,9 @@ before do
   halt 401 if token.nil?
 
   File.open(DATA_PATH).each do |line|
-    access_token_hash = JSON.parse(line)
-    if token == access_token_hash['access_token']
-      @access_token = AccessToken.new(access_token_hash['access_token'], access_token_hash.fetch('scope'))
+    access_token_hash = JSON.parse(line, symbolize_names: true)
+    if token == access_token_hash[:access_token]
+      @access_token = AccessToken.new(**access_token_hash.slice(:access_token, :scope, :user))
       break
     end
   end
@@ -43,6 +43,6 @@ before do
 end
 
 get '/favorites' do
-  # TODO
-  json FAVORITES[:unknown]
+  favorites = FAVORITES[@access_token.user.to_sym] || FAVORITES[:unknown]
+  json user: @access_token.user, favorites: favorites.slice(*@access_token.scope.map(&:to_sym))
 end

@@ -16,11 +16,6 @@ FAVORITES = {
     foods: ['bacon', 'kale', 'gravel'],
     music: ['baroque', 'ukulele', 'baroque ukulele'],
   },
-  unknown: {
-    movies: [],
-    foods: [],
-    music: [],
-  },
 }
 
 AccessToken = Struct.new(:access_token, :scope, :user, keyword_init: true)
@@ -43,6 +38,7 @@ before do
 end
 
 get '/favorites' do
-  favorites = FAVORITES[@access_token.user.to_sym] || FAVORITES[:unknown]
-  json user: @access_token.user, favorites: favorites.slice(*@access_token.scope.map(&:to_sym))
+  user = @access_token.user || 'unknown'
+  favorites = FAVORITES[user.to_sym] || { movies: [], foods: [], music: [] }
+  json user: user, favorites: favorites.slice(*@access_token.scope.map(&:to_sym))
 end

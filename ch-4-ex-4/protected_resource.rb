@@ -3,12 +3,24 @@ require 'json'
 require 'sinatra'
 require 'sinatra/json'
 
-DATA_PATH = File.expand_path('../oauth-in-action-code/exercises/ch-4-ex-3/database.nosql', __dir__)
+DATA_PATH = File.expand_path('../oauth-in-action-code/exercises/ch-4-ex-4/database.nosql', __dir__)
 
-PRODUCE = {
-  fruit: %w[apple banana kiwi],
-  veggies: %w[lettuce onion potato],
-  meats: %w[bacon steak chicken\ breast],
+FAVORITES = {
+  alice: {
+    movies: ['The Multidmensional Vector', 'Space Fights', 'Jewelry Boss'],
+    foods: ['bacon', 'pizza', 'bacon pizza'],
+    music: ['techno', 'industrial', 'alternative'],
+  },
+  bob: {
+    movies: ['An Unrequited Love', 'Several Shades of Turquoise', 'Think Of The Children'],
+    foods: ['bacon', 'kale', 'gravel'],
+    music: ['baroque', 'ukulele', 'baroque ukulele'],
+  },
+  unknown: {
+    movies: [],
+    foods: [],
+    music: [],
+  },
 }
 
 AccessToken = Struct.new(:access_token, :scope)
@@ -30,6 +42,7 @@ before do
   halt 401 if @access_token.nil?
 end
 
-get '/produce' do
-  json PRODUCE.slice(*@access_token.scope.map(&:to_sym))
+get '/favorites' do
+  # TODO
+  json FAVORITES[:unknown]
 end

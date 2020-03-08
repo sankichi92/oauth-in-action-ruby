@@ -122,11 +122,9 @@ post '/token' do
       end
       json access_token: access_token, token_type: 'Bearer'
     else
-      status 400
-      json error: 'invalid_grant'
+      halt 400, json(error: 'invalid_grant')
     end
   else
-    status 400
-    json error: 'unsupported_grant_type'
+    halt 400, json(error: 'unsupported_grant_type')
   end
 end

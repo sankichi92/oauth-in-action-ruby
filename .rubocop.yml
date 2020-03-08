@@ -2,7 +2,7 @@ Layout/LineLength:
   Max: 160
 
 Metrics/AbcSize:
-  Max: 20
+  Max: 30
 
 Style/GlobalVars:
   Enabled: false
@@ -11,6 +11,9 @@ Style/GuardClause:
   Enabled: false
 
 Style/TrailingCommaInArguments:
+  EnforcedStyleForMultiline: comma
+
+Style/TrailingCommaInArrayLiteral:
   EnforcedStyleForMultiline: comma
 
 Style/TrailingCommaInHashLiteral:

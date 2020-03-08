@@ -1,6 +1,9 @@
 # frozen_string_literal: true
 
+require 'securerandom'
+
 require 'sinatra'
+require 'sinatra/required_params'
 
 Client = Struct.new(:id, :secret, :redirect_uris, keyword_init: true)
 
@@ -36,8 +39,19 @@ template :approve do
   HTML
 end
 
+$requests = {}
+
 get '/authorize' do
-  # TODO
+  required_params :client_id, :redirect_uri
+
+  @client = CLIENTS.find { |c| c.id == params[:client_id] }
+  halt 400, 'Unknown client' if @client.nil?
+  halt 400, 'Invalid redirect URI' unless @client.redirect_uris.include?(params[:redirect_uri])
+
+  @request_id = SecureRandom.uuid
+  $requests[@request_id] = params
+
+  erb :approve
 end
 
 post '/approve' do

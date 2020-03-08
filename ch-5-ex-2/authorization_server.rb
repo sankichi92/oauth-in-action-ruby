@@ -19,12 +19,12 @@ CLIENTS = [
   ),
 ].freeze
 
-DATA_PATH = File.expand_path('../oauth-in-action-code/exercises/ch-5-ex-1/database.nosql', __dir__)
+DATA_PATH = File.expand_path('../oauth-in-action-code/exercises/ch-5-ex-2/database.nosql', __dir__)
 
 set :port, 9001
 
 configure do
-  File.truncate(DATA_PATH, 0) if File.exist?(DATA_PATH)
+  File.open(DATA_PATH, 'w').close
 end
 
 template :approve do
@@ -52,12 +52,18 @@ end
 helpers do
   def basic_auth!
     auth = Rack::Auth::Basic::Request.new(request.env)
-    halt 401, { 'WWW-Authenticate' => %(Basic realm="#{settings.bind}:#{settings.port}") }, nil unless auth.provided?
-    halt 400 unless auth.basic?
+    client_id, secret = if auth.provided? && auth.basic?
+                          auth.credentials
+                        else
+                          required_params :client_id, :client_secret
+                          [params[:client_id], params[:client_secret]]
+                        end
+    @client = CLIENTS.find { |c| c.id == client_id }
+    halt 401 if @client.nil? || secret != @client.secret
+  end
 
-    username, password = auth.credentials
-    @client = CLIENTS.find { |c| c.id == username }
-    halt 401, { 'WWW-Authenticate' => %(Basic realm="#{settings.bind}:#{settings.port}") }, nil if @client.nil? || password != @client.secret
+  def generate_token
+    SecureRandom.base64
   end
 end
 
@@ -116,17 +122,38 @@ post '/token' do
 
     code = $codes.delete(params[:code])
     if code && code[:request][:client_id] == @client.id
-      access_token = SecureRandom.base64
+      access_token = generate_token
+      refresh_token = generate_token
+
       File.open(DATA_PATH, 'a') do |file|
         file.puts({ access_token: access_token, client_id: @client.id }.to_json)
+        file.puts({ refresh_token: refresh_token, client_id: @client.id }.to_json)
       end
-      json access_token: access_token, token_type: 'Bearer'
+
+      json access_token: access_token, token_type: 'Bearer', refresh_token: refresh_token
     else
-      status 400
-      json error: 'invalid_grant'
+      halt 400, json(error: 'invalid_grant')
     end
+  when 'refresh_token'
+    required_params :refresh_token
+
+    token_hashes = File.readlines(DATA_PATH).map { |line| JSON.parse(line) }
+    token_hashes.each_with_index do |token_hash, i|
+      if params[:refresh_token] == token_hash['refresh_token']
+        if @client.id == token_hash['client_id']
+          access_token = generate_token
+          token_hashes << { access_token: access_token, client_id: @client.id }
+          halt json(access_token: access_token, token_type: 'Bearer', refresh_token: token_hash['refresh_token'])
+        else
+          token_hashes.delete_at(i)
+        end
+      end
+    ensure
+      File.write(DATA_PATH, token_hashes.map(&:to_json).join("\n"))
+    end
+
+    halt 400, json(error: 'invalid_grant')
   else
-    status 400
-    json error: 'unsupported_grant_type'
+    halt 400, json(error: 'unsupported_grant_type')
   end
 end

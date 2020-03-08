@@ -2,8 +2,14 @@
 
 require 'sinatra'
 
+Client = Struct.new(:id, :secret, :redirect_uris, keyword_init: true)
+
 CLIENTS = [
-  # TODO
+  Client.new(
+    id: 'oauth-client-1',
+    secret: 'oauth-client-secret-1',
+    redirect_uris: %w[http://localhost:9000/callback],
+  ),
 ].freeze
 
 set :port, 9001

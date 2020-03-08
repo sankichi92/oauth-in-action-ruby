@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'securerandom'
+require 'uri'
 
 require 'sinatra'
 require 'sinatra/required_params'
@@ -40,6 +41,7 @@ template :approve do
 end
 
 $requests = {}
+$codes = {}
 
 get '/authorize' do
   required_params :client_id, :redirect_uri
@@ -55,7 +57,31 @@ get '/authorize' do
 end
 
 post '/approve' do
-  # TODO
+  required_params :request_id
+
+  original_params = $requests.delete(params[:request_id])
+  halt 403, 'No matching authorization request' if original_params.nil?
+
+  redirect_uri = URI.parse(original_params[:redirect_uri])
+
+  if params[:approve]
+    case original_params[:response_type]
+    when 'code'
+      code = SecureRandom.urlsafe_base64(6)
+      $codes[code] = { request: original_params }
+
+      redirect_uri.query = build_query(
+        code: code,
+        state: original_params[:state],
+      )
+    else
+      redirect_uri.query = build_query(error: 'unsupported_response_type')
+    end
+  else
+    redirect_uri.query = build_query(error: 'access_denied')
+  end
+
+  redirect redirect_uri
 end
 
 post '/token' do

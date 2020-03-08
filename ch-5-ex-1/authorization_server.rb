@@ -1,10 +1,12 @@
 # frozen_string_literal: true
 
+require 'json'
 require 'securerandom'
 require 'uri'
 
 require 'rack/auth/basic'
 require 'sinatra'
+require 'sinatra/json'
 require 'sinatra/required_params'
 
 Client = Struct.new(:id, :secret, :redirect_uris, keyword_init: true)
@@ -17,7 +19,13 @@ CLIENTS = [
   ),
 ].freeze
 
+DATA_PATH = File.expand_path('../oauth-in-action-code/exercises/ch-5-ex-1/database.nosql', __dir__)
+
 set :port, 9001
+
+configure do
+  File.truncate(DATA_PATH, 0) if File.exist?(DATA_PATH)
+end
 
 template :approve do
   <<~HTML
@@ -99,4 +107,26 @@ end
 
 post '/token' do
   basic_auth!
+
+  required_params :grant_type
+
+  case params[:grant_type]
+  when 'authorization_code'
+    required_params :code
+
+    code = $codes.delete(params[:code])
+    if code && code[:request][:client_id] == @client.id
+      access_token = SecureRandom.base64
+      File.open(DATA_PATH, 'a') do |file|
+        file.puts({ access_token: access_token, client_id: @client.id }.to_json)
+      end
+      json access_token: access_token, token_type: 'Bearer'
+    else
+      status 400
+      json error: 'invalid_grant'
+    end
+  else
+    status 400
+    json error: 'unsupported_grant_type'
+  end
 end

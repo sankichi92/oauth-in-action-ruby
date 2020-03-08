@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require 'json'
 
 require 'sinatra'
@@ -9,7 +11,7 @@ PRODUCE = {
   fruit: %w[apple banana kiwi],
   veggies: %w[lettuce onion potato],
   meats: %w[bacon steak chicken\ breast],
-}
+}.freeze
 
 AccessToken = Struct.new(:access_token, :scope)
 

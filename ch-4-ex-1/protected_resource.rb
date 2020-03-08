@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require 'json'
 
 require 'sinatra'
@@ -8,7 +10,7 @@ DATA_PATH = File.expand_path('../oauth-in-action-code/exercises/ch-4-ex-1/databa
 RESOURCE = {
   name: 'Protected Resource',
   description: 'This data has been protected by OAuth 2.0',
-}
+}.freeze
 
 set :port, 9002
 

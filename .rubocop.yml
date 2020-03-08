@@ -4,16 +4,10 @@ Layout/LineLength:
 Metrics/AbcSize:
   Max: 20
 
-Style/FrozenStringLiteralComment:
-  Enabled: false
-
 Style/GlobalVars:
   Enabled: false
 
 Style/GuardClause:
-  Enabled: false
-
-Style/MutableConstant:
   Enabled: false
 
 Style/TrailingCommaInArguments:

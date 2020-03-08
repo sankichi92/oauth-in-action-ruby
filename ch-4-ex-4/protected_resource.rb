@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require 'json'
 
 require 'sinatra'
@@ -16,7 +18,7 @@ FAVORITES = {
     foods: ['bacon', 'kale', 'gravel'],
     music: ['baroque', 'ukulele', 'baroque ukulele'],
   },
-}
+}.freeze
 
 AccessToken = Struct.new(:access_token, :scope, :user, keyword_init: true)
 

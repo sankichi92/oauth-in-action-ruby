@@ -3,6 +3,7 @@
 require 'securerandom'
 require 'uri'
 
+require 'rack/auth/basic'
 require 'sinatra'
 require 'sinatra/required_params'
 
@@ -38,6 +39,18 @@ template :approve do
       </body>
     </html>
   HTML
+end
+
+helpers do
+  def basic_auth!
+    auth = Rack::Auth::Basic::Request.new(request.env)
+    halt 401, { 'WWW-Authenticate' => %(Basic realm="#{settings.bind}:#{settings.port}") }, nil unless auth.provided?
+    halt 400 unless auth.basic?
+
+    username, password = auth.credentials
+    @client = CLIENTS.find { |c| c.id == username }
+    halt 401, { 'WWW-Authenticate' => %(Basic realm="#{settings.bind}:#{settings.port}") }, nil if @client.nil? || password != @client.secret
+  end
 end
 
 $requests = {}
@@ -85,5 +98,5 @@ post '/approve' do
 end
 
 post '/token' do
-  # TODO
+  basic_auth!
 end

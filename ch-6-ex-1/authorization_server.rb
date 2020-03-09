@@ -23,7 +23,7 @@ CLIENTS = [
 
 set :port, 9001
 
-$db = PseudoDatabase.new(File.expand_path('../oauth-in-action-code/exercises/ch-5-ex-3/database.nosql', __dir__)).tap(&:reset)
+$db = PseudoDatabase.new(File.expand_path('../oauth-in-action-code/exercises/ch-6-ex-1/database.nosql', __dir__)).tap(&:reset)
 
 template :approve do
   <<~HTML
@@ -67,7 +67,7 @@ helpers do
   end
 
   def generate_token
-    SecureRandom.base64
+    SecureRandom.urlsafe_base64
   end
 end
 
@@ -119,6 +119,20 @@ post '/approve' do
     $codes[code] = { request: original_params, scope: params[:scope] }
 
     redirect_uri.query = build_query(code: code, state: original_params[:state])
+  when 'token'
+    client = CLIENTS.find { |c| c.id == original_params[:client_id] }
+    unless params[:scope].difference(client.scope).empty?
+      redirect_uri.fragment = build_query(error: 'invalid_scope')
+      redirect redirect_uri
+    end
+
+    access_token = generate_token
+    $db.insert({ access_token: access_token, client_id: client.id, scope: params[:scope] })
+
+    response_body_hash = { access_token: access_token, token_type: 'Bearer', scope: params[:scope].join(' ') }
+    response_body_hash.merge!(state: original_params[:state]) if original_params[:state]
+
+    redirect_uri.fragment = build_query(response_body_hash)
   else
     redirect_uri.query = build_query(error: 'unsupported_response_type')
   end

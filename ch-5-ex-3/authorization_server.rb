@@ -114,7 +114,7 @@ post '/approve' do
   when 'code'
     client = CLIENTS.find { |c| c.id == original_params[:client_id] }
     unless params[:scope].difference(client.scope).empty?
-      redirect_uri.query = build_query(error: 'unsupported_response_type')
+      redirect_uri.query = build_query(error: 'invalid_scope')
       redirect redirect_uri
     end
 

@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require 'json'
 require 'securerandom'
 require 'uri'
 
@@ -8,6 +7,8 @@ require 'rack/auth/basic'
 require 'sinatra'
 require 'sinatra/json'
 require 'sinatra/required_params'
+
+require_relative '../lib/pseudo_database'
 
 Client = Struct.new(:id, :secret, :redirect_uris, keyword_init: true)
 
@@ -19,13 +20,9 @@ CLIENTS = [
   ),
 ].freeze
 
-DATA_PATH = File.expand_path('../oauth-in-action-code/exercises/ch-5-ex-2/database.nosql', __dir__)
-
 set :port, 9001
 
-configure do
-  File.open(DATA_PATH, 'w').close
-end
+$db = PseudoDatabase.new(File.expand_path('../oauth-in-action-code/exercises/ch-5-ex-2/database.nosql', __dir__)).tap(&:reset)
 
 template :approve do
   <<~HTML
@@ -97,10 +94,7 @@ post '/approve' do
       code = SecureRandom.urlsafe_base64(6)
       $codes[code] = { request: original_params }
 
-      redirect_uri.query = build_query(
-        code: code,
-        state: original_params[:state],
-      )
+      redirect_uri.query = build_query(code: code, state: original_params[:state])
     else
       redirect_uri.query = build_query(error: 'unsupported_response_type')
     end
@@ -125,10 +119,10 @@ post '/token' do
       access_token = generate_token
       refresh_token = generate_token
 
-      File.open(DATA_PATH, 'a') do |file|
-        file.puts({ access_token: access_token, client_id: @client.id }.to_json)
-        file.puts({ refresh_token: refresh_token, client_id: @client.id }.to_json)
-      end
+      $db.insert(
+        { access_token: access_token, client_id: @client.id },
+        { refresh_token: refresh_token, client_id: @client.id },
+      )
 
       json access_token: access_token, token_type: 'Bearer', refresh_token: refresh_token
     else
@@ -137,19 +131,19 @@ post '/token' do
   when 'refresh_token'
     required_params :refresh_token
 
-    token_hashes = File.readlines(DATA_PATH).map { |line| JSON.parse(line) }
+    token_hashes = $db.to_a
     token_hashes.each_with_index do |token_hash, i|
-      if params[:refresh_token] == token_hash['refresh_token']
-        if @client.id == token_hash['client_id']
+      if params[:refresh_token] == token_hash[:refresh_token]
+        if @client.id == token_hash[:client_id]
           access_token = generate_token
           token_hashes << { access_token: access_token, client_id: @client.id }
-          halt json(access_token: access_token, token_type: 'Bearer', refresh_token: token_hash['refresh_token'])
+          halt json(access_token: access_token, token_type: 'Bearer', refresh_token: token_hash[:refresh_token])
         else
           token_hashes.delete_at(i)
         end
       end
     ensure
-      File.write(DATA_PATH, token_hashes.map(&:to_json).join("\n"))
+      $db.replace(*token_hashes)
     end
 
     halt 400, json(error: 'invalid_grant')

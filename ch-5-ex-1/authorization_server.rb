@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require 'json'
 require 'securerandom'
 require 'uri'
 
@@ -8,6 +7,8 @@ require 'rack/auth/basic'
 require 'sinatra'
 require 'sinatra/json'
 require 'sinatra/required_params'
+
+require_relative '../lib/pseudo_database'
 
 Client = Struct.new(:id, :secret, :redirect_uris, keyword_init: true)
 
@@ -19,13 +20,9 @@ CLIENTS = [
   ),
 ].freeze
 
-DATA_PATH = File.expand_path('../oauth-in-action-code/exercises/ch-5-ex-1/database.nosql', __dir__)
-
 set :port, 9001
 
-configure do
-  File.truncate(DATA_PATH, 0) if File.exist?(DATA_PATH)
-end
+$db = PseudoDatabase.new(File.expand_path('../oauth-in-action-code/exercises/ch-5-ex-1/database.nosql', __dir__)).tap(&:reset)
 
 template :approve do
   <<~HTML
@@ -91,10 +88,7 @@ post '/approve' do
       code = SecureRandom.urlsafe_base64(6)
       $codes[code] = { request: original_params }
 
-      redirect_uri.query = build_query(
-        code: code,
-        state: original_params[:state],
-      )
+      redirect_uri.query = build_query(code: code, state: original_params[:state])
     else
       redirect_uri.query = build_query(error: 'unsupported_response_type')
     end
@@ -117,9 +111,7 @@ post '/token' do
     code = $codes.delete(params[:code])
     if code && code[:request][:client_id] == @client.id
       access_token = SecureRandom.base64
-      File.open(DATA_PATH, 'a') do |file|
-        file.puts({ access_token: access_token, client_id: @client.id }.to_json)
-      end
+      $db.insert({ access_token: access_token, client_id: @client.id })
       json access_token: access_token, token_type: 'Bearer'
     else
       halt 400, json(error: 'invalid_grant')

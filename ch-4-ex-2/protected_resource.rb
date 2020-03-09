@@ -1,17 +1,17 @@
 # frozen_string_literal: true
 
-require 'json'
-
 require 'sinatra'
 require 'sinatra/json'
 
-DATA_PATH = File.expand_path('../oauth-in-action-code/exercises/ch-4-ex-2/database.nosql', __dir__)
+require_relative '../lib/pseudo_database'
 
 AccessToken = Struct.new(:access_token, :scope)
 
 set :port, 9002
 
 enable :method_override
+
+$db = PseudoDatabase.new(File.expand_path('../oauth-in-action-code/exercises/ch-4-ex-2/database.nosql', __dir__))
 
 helpers do
   def require_scope(scope)
@@ -27,14 +27,12 @@ before do
   logger.info "Incoming token: #{token}"
   halt 401 if token.nil?
 
-  File.open(DATA_PATH).each do |line|
-    access_token_hash = JSON.parse(line)
-    if token == access_token_hash['access_token']
-      @access_token = AccessToken.new(access_token_hash['access_token'], access_token_hash.fetch('scope'))
-      break
-    end
+  access_token_hash = $db.find { |row| row[:access_token] == token }
+  if access_token_hash
+    @access_token = AccessToken.new(access_token_hash.fetch(:access_token), access_token_hash.fetch(:scope))
+  else
+    halt 401
   end
-  halt 401 if @access_token.nil?
 end
 
 $words = []

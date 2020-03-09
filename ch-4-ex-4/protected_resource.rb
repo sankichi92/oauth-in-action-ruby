@@ -1,11 +1,9 @@
 # frozen_string_literal: true
 
-require 'json'
-
 require 'sinatra'
 require 'sinatra/json'
 
-DATA_PATH = File.expand_path('../oauth-in-action-code/exercises/ch-4-ex-4/database.nosql', __dir__)
+require_relative '../lib/pseudo_database'
 
 FAVORITES = {
   alice: {
@@ -24,19 +22,19 @@ AccessToken = Struct.new(:access_token, :scope, :user, keyword_init: true)
 
 set :port, 9002
 
+$db = PseudoDatabase.new(File.expand_path('../oauth-in-action-code/exercises/ch-4-ex-4/database.nosql', __dir__))
+
 before do
   token = request.env['HTTP_AUTHORIZATION']&.slice(%r{^Bearer +([a-z0-9\-._‾+/]+=*)}i, 1) || params[:access_token]
   logger.info "Incoming token: #{token}"
   halt 401 if token.nil?
 
-  File.open(DATA_PATH).each do |line|
-    access_token_hash = JSON.parse(line, symbolize_names: true)
-    if token == access_token_hash[:access_token]
-      @access_token = AccessToken.new(**access_token_hash.slice(:access_token, :scope, :user))
-      break
-    end
+  access_token_hash = $db.find { |row| row[:access_token] == token }
+  if access_token_hash
+    @access_token = AccessToken.new(**access_token_hash.slice(:access_token, :scope, :user))
+  else
+    halt 401
   end
-  halt 401 if @access_token.nil?
 end
 
 get '/favorites' do

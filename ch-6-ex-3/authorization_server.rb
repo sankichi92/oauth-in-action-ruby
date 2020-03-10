@@ -11,6 +11,7 @@ require 'sinatra/required_params'
 require_relative '../lib/pseudo_database'
 
 Client = Struct.new(:id, :secret, :redirect_uris, :scope, keyword_init: true)
+User = Struct.new(:sub, :username, :name, :email, :email_verified, :password, keyword_init: true)
 
 CLIENTS = [
   Client.new(
@@ -21,9 +22,36 @@ CLIENTS = [
   ),
 ].freeze
 
+USERS = [
+  User.new(
+    sub: '9XE3-JI34-00132A',
+    username: 'alice',
+    name: 'Alice',
+    email: 'alice.wonderland@example.com',
+    email_verified: true,
+    password: 'password',
+  ),
+  User.new(
+    sub: '1ZT5-OE63-57383B',
+    username: 'bob',
+    name: 'Bob',
+    email: 'bob.loblob@example.net',
+    email_verified: false,
+    password: 'this is my secret password',
+  ),
+  User.new(
+    sub: 'F5Q1-L6LGG-959FS',
+    username: 'carol',
+    name: 'Carol',
+    email: 'carol.lewis@example.net',
+    email_verified: true,
+    password: 'user password!',
+  ),
+].freeze
+
 set :port, 9001
 
-$db = PseudoDatabase.new(File.expand_path('../oauth-in-action-code/exercises/ch-6-ex-2/database.nosql', __dir__)).tap(&:reset)
+$db = PseudoDatabase.new(File.expand_path('../oauth-in-action-code/exercises/ch-6-ex-3/database.nosql', __dir__)).tap(&:reset)
 
 template :approve do
   <<~HTML
@@ -68,6 +96,10 @@ helpers do
 
   def generate_token
     SecureRandom.urlsafe_base64
+  end
+
+  def get_user(username)
+    USERS.find { |user| user.username == username }
   end
 end
 
@@ -178,7 +210,7 @@ post '/token' do
         end
       end
     ensure
-      $db.replace(token_hashes)
+      $db.replace(*token_hashes)
     end
 
     halt 400, json(error: 'invalid_grant')
@@ -190,6 +222,23 @@ post '/token' do
     $db.insert({ access_token: access_token, client_id: @client.id, scope: params[:scope] })
 
     json access_token: access_token, token_type: 'Bearer', scope: params[:scope]
+  when 'password'
+    required_params :username, :password, :scope
+
+    user = get_user(params[:username])
+    halt 401, json(error: 'invalid_grant') if user.nil? || params[:password] != user.password
+
+    halt 400, json(error: 'invalid_scope') unless params[:scope].split.difference(@client.scope).empty?
+
+    access_token = generate_token
+    refresh_token = generate_token
+
+    $db.insert(
+      { access_token: access_token, client_id: @client.id, scope: params[:scope] },
+      { refresh_token: refresh_token, client_id: @client.id, scope: params[:scope] },
+    )
+
+    json access_token: access_token, token_type: 'Bearer', refresh_token: refresh_token, scope: params[:scope]
   else
     halt 400, json(error: 'unsupported_grant_type')
   end

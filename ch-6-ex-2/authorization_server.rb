@@ -23,7 +23,7 @@ CLIENTS = [
 
 set :port, 9001
 
-$db = PseudoDatabase.new(File.expand_path('../oauth-in-action-code/exercises/ch-6-ex-1/database.nosql', __dir__)).tap(&:reset)
+$db = PseudoDatabase.new(File.expand_path('../oauth-in-action-code/exercises/ch-6-ex-2/database.nosql', __dir__)).tap(&:reset)
 
 template :approve do
   <<~HTML
@@ -182,6 +182,14 @@ post '/token' do
     end
 
     halt 400, json(error: 'invalid_grant')
+  when 'client_credentials'
+    required_params :scope
+    halt 400, json(error: 'invalid_scope') unless params[:scope].split.difference(@client.scope).empty?
+
+    access_token = generate_token
+    $db.insert({ access_token: access_token, client_id: @client.id, scope: params[:scope] })
+
+    json access_token: access_token, token_type: 'Bearer', scope: params[:scope]
   else
     halt 400, json(error: 'unsupported_grant_type')
   end

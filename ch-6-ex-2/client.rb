@@ -63,7 +63,17 @@ get '/authorize' do
   session[:access_token] = nil
   session[:scope] = nil
 
-  # TODO
+  begin
+    fetch_and_save_access_token!(
+      grant_type: 'client_credentials',
+      scope: SCOPE.join(' '),
+    )
+  rescue Net::HTTPExceptions => e
+    logger.error e
+    error "Unable to fetch access token, server response: #{e.response.code}"
+  end
+
+  erb :index
 end
 
 get '/fetch_resource' do

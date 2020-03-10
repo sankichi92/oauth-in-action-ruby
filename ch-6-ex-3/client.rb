@@ -2,10 +2,10 @@
 
 require 'json'
 require 'net/http'
-require 'securerandom'
 require 'uri'
 
 require 'sinatra'
+require 'sinatra/required_params'
 
 TOKEN_ENDPOINT = 'http://localhost:9001/token'
 
@@ -32,6 +32,7 @@ helpers do
     body = JSON.parse(response.body)
 
     session[:access_token] = body['access_token']
+    session[:refresh_token] = body['refresh_token']
     session[:scope] = body['scope']
   end
 end
@@ -47,9 +48,29 @@ template :index do
         <ul>
           <li>Access token value: <%= session[:access_token] %></li>
           <li>Scope value: <%= session[:scope] %></li>
+          <li>Refresh token value: <%= session[:refresh_token] %></li>
         </ul>
         <a href="/authorize">Get OAuth Token</a>
         <a href="/fetch_resource">Get Protected Resource</a>
+      </body>
+    </html>
+  HTML
+end
+
+template :username_password do
+  <<~HTML
+    <!DOCTYPE html>
+    <html lang="en">
+      <head>
+        <title>Client</title>
+      </head>
+      <body>
+        <p>Get an access token</p>
+        <form action="/username_password" method="POST">
+          <input type="text" name="username" placeholder="username">
+          <input type="password" name="password" placeholder="password">
+          <input type="submit" value="Get an access token">
+        </form>
       </body>
     </html>
   HTML
@@ -60,12 +81,17 @@ get '/' do
 end
 
 get '/authorize' do
-  session[:access_token] = nil
-  session[:scope] = nil
+  erb :username_password
+end
+
+post '/username_password' do
+  required_params :username, :password
 
   begin
     fetch_and_save_access_token!(
-      grant_type: 'client_credentials',
+      grant_type: 'password',
+      username: params[:username],
+      password: params[:password],
       scope: SCOPE.join(' '),
     )
   rescue Net::HTTPExceptions => e
@@ -77,8 +103,6 @@ get '/authorize' do
 end
 
 get '/fetch_resource' do
-  halt 401, 'Missing access token' if session[:access_token].nil?
-
   protected_resource_uri = URI.parse(PROTECTED_RESOURCE)
   http = Net::HTTP.new(protected_resource_uri.host, protected_resource_uri.port)
   headers = { 'Authorization' => "Bearer #{session[:access_token]}" }
@@ -86,11 +110,22 @@ get '/fetch_resource' do
   logger.info "Requesting protected resource with access token: #{session[:access_token]}"
   response = http.post(protected_resource_uri.path, nil, headers)
 
-  case response
-  when Net::HTTPSuccess
+  if response.is_a?(Net::HTTPSuccess)
     halt response.body
-  else
+  elsif response.is_a?(Net::HTTPUnauthorized) && session[:refresh_token]
     session[:access_token] = nil
+    begin
+      fetch_and_save_access_token!(
+        grant_type: 'refresh_token',
+        refresh_token: session[:refresh_token],
+      )
+      redirect to('/fetch_resource')
+    rescue Net::HTTPExceptions => e
+      session[:refresh_token] = nil
+      logger.error e
+      error "Unable to refresh access token, server response: #{e.response.code}"
+    end
+  else
     logger.error response.inspect
     error "Unable to fetch resource, server response: #{response.code}"
   end

@@ -2,7 +2,6 @@
 
 require 'json'
 require 'net/http'
-require 'securerandom'
 require 'uri'
 
 require 'sinatra'

@@ -178,7 +178,7 @@ post '/token' do
         end
       end
     ensure
-      $db.replace(token_hashes)
+      $db.replace(*token_hashes)
     end
 
     halt 400, json(error: 'invalid_grant')

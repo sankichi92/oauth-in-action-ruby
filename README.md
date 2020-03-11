@@ -17,7 +17,7 @@ For example, run ch-3-ex-1:
 
     $ bundle exec ruby ch-3-ex-1/client.rb
     (open a new terminal window)
-    $ cd oauth-in-action/exercises/ch-3-ex-1
+    $ cd oauth-in-action-code/exercises/ch-3-ex-1
     $ npm install
     $ node authorizationServer.js
     (open a new terminal window)

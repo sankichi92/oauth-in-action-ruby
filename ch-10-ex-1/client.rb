@@ -2,6 +2,7 @@
 
 require 'json'
 require 'net/http'
+require 'openssl'
 require 'securerandom'
 require 'uri'
 
@@ -69,12 +70,17 @@ get '/authorize' do
   session[:scope] = nil
   session[:state] = SecureRandom.urlsafe_base64
 
+  session[:code_verifier] = SecureRandom.alphanumeric(80)
+  code_challenge = OpenSSL::Digest::SHA256.base64digest(session[:code_verifier])
+
   query = build_query(
     response_type: 'code',
     scope: SCOPE,
     client_id: CLIENT_ID,
     redirect_uri: REDIRECT_URI,
     state: session[:state],
+    code_challenge: code_challenge,
+    code_challenge_method: 'S256',
   )
   redirect "#{AUTHORIZATION_ENDPOINT}?#{query}"
 end
@@ -88,6 +94,7 @@ get '/callback' do
       grant_type: 'authorization_code',
       code: params[:code],
       redirect_uri: REDIRECT_URI,
+      code_verifier: session[:code_verifier],
     )
     erb :index
   rescue Net::HTTPExceptions => e

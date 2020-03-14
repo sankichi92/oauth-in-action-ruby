@@ -23,7 +23,7 @@ CLIENTS = [
 
 set :port, 9001
 
-$db = PseudoDatabase.new(File.expand_path('../oauth-in-action-code/exercises/ch-5-ex-3/database.nosql', __dir__)).tap(&:reset)
+$db = PseudoDatabase.new(File.expand_path('../oauth-in-action-code/exercises/ch-9-ex-1/database.nosql', __dir__)).tap(&:reset)
 
 template :approve do
   <<~HTML
@@ -133,22 +133,22 @@ post '/token' do
 
   case params[:grant_type]
   when 'authorization_code'
-    required_params :code
+    logger.info params
+    required_params :code, :redirect_uri
 
     code = $codes.delete(params[:code])
-    if code && code[:request][:client_id] == @client.id
-      access_token = generate_token
-      refresh_token = generate_token
+    logger.info code
+    halt 400, json(error: 'invalid_grant') if code.nil? || code[:request][:client_id] != @client.id || code[:request][:redirect_uri] != params[:redirect_uri]
 
-      $db.insert(
-        { access_token: access_token, client_id: @client.id, scope: code[:scope] },
-        { refresh_token: refresh_token, client_id: @client.id, scope: code[:scope] },
-      )
+    access_token = generate_token
+    refresh_token = generate_token
 
-      json access_token: access_token, token_type: 'Bearer', refresh_token: refresh_token, scope: code[:scope].join(' ')
-    else
-      halt 400, json(error: 'invalid_grant')
-    end
+    $db.insert(
+      { access_token: access_token, client_id: @client.id, scope: code[:scope] },
+      { refresh_token: refresh_token, client_id: @client.id, scope: code[:scope] },
+    )
+
+    json access_token: access_token, token_type: 'Bearer', refresh_token: refresh_token, scope: code[:scope].join(' ')
   when 'refresh_token'
     required_params :refresh_token
 

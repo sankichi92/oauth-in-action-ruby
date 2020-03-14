@@ -1,14 +1,22 @@
 # frozen_string_literal: true
 
+require 'rack/cors'
 require 'sinatra'
 require 'sinatra/json'
 require 'sinatra/required_params'
 
 require_relative '../lib/pseudo_database'
 
+use Rack::Cors do
+  allow do
+    origins '*'
+    resource '/helloWorld', headers: :any, methods: %i[get options]
+  end
+end
+
 set :port, 9002
 
-$db = PseudoDatabase.new(File.expand_path('../oauth-in-action-code/exercises/ch-8-ex-1/database.nosql', __dir__))
+$db = PseudoDatabase.new(File.expand_path('../oauth-in-action-code/exercises/ch-8-ex-2/database.nosql', __dir__))
 
 before do
   token = request.env['HTTP_AUTHORIZATION']&.slice(%r{^Bearer +([a-z0-9\-._‾+/]+=*)}i, 1) || params[:access_token]

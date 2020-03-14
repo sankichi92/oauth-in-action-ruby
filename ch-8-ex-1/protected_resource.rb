@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'sinatra'
+require 'sinatra/json'
 require 'sinatra/required_params'
 
 require_relative '../lib/pseudo_database'
@@ -21,18 +22,21 @@ end
 get '/helloWorld' do
   required_params :language
 
-  case params[:language]
-  when 'en'
-    'Hello World'
-  when 'de'
-    'Hello Welt'
-  when 'it'
-    'Ciao Mondo'
-  when 'fr'
-    'Bonjour monde'
-  when 'es'
-    'Hola mundo'
-  else
-    halt 400, "Invalid language: #{escape_html(params[:language])}"
-  end
+  greeting = case params[:language]
+             when 'en'
+               'Hello World'
+             when 'de'
+               'Hello Welt'
+             when 'it'
+               'Ciao Mondo'
+             when 'fr'
+               'Bonjour monde'
+             when 'es'
+               'Hola mundo'
+             else
+               "Invalid language: #{escape(params[:language])}"
+             end
+
+  headers 'X-Content-Type-Options' => 'nosniff', 'X-XSS-Protection' => '1; mode=block'
+  json greeting: greeting
 end

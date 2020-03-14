@@ -23,7 +23,7 @@ CLIENTS = [
 
 set :port, 9001
 
-$db = PseudoDatabase.new(File.expand_path('../oauth-in-action-code/exercises/ch-9-ex-1/database.nosql', __dir__)).tap(&:reset)
+$db = PseudoDatabase.new(File.expand_path('../oauth-in-action-code/exercises/ch-9-ex-2/database.nosql', __dir__)).tap(&:reset)
 
 template :approve do
   <<~HTML
@@ -81,12 +81,8 @@ get '/authorize' do
   halt 400, 'Unknown client' if @client.nil?
   halt 400, 'Invalid redirect URI' unless @client.redirect_uris.include?(params[:redirect_uri])
 
-  redirect_uri = URI.parse(params[:redirect_uri])
   @scope = params[:scope].split
-  unless @scope.difference(@client.scope).empty?
-    redirect_uri.query = build_query(error: 'invalid_scope')
-    redirect redirect_uri
-  end
+  halt 400, json(error: 'invalid_scope') unless @scope.difference(@client.scope).empty?
 
   @request_id = SecureRandom.uuid
   $requests[@request_id] = params

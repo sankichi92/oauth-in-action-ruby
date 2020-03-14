@@ -33,6 +33,6 @@ get '/helloWorld' do
   when 'es'
     'Hola mundo'
   else
-    halt 400, "Invalid language: #{params[:language]}"
+    halt 400, "Invalid language: #{escape_html(params[:language])}"
   end
 end

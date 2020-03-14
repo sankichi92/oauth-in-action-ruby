@@ -129,11 +129,9 @@ post '/token' do
 
   case params[:grant_type]
   when 'authorization_code'
-    logger.info params
     required_params :code, :redirect_uri
 
     code = $codes.delete(params[:code])
-    logger.info code
     halt 400, json(error: 'invalid_grant') if code.nil? || code[:request][:client_id] != @client.id || code[:request][:redirect_uri] != params[:redirect_uri]
 
     access_token = generate_token

@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require 'openssl'
 require 'securerandom'
 require 'uri'
 
@@ -23,7 +24,7 @@ CLIENTS = [
 
 set :port, 9001
 
-$db = PseudoDatabase.new(File.expand_path('../oauth-in-action-code/exercises/ch-9-ex-2/database.nosql', __dir__)).tap(&:reset)
+$db = PseudoDatabase.new(File.expand_path('../oauth-in-action-code/exercises/ch-10-ex-1/database.nosql', __dir__)).tap(&:reset)
 
 template :approve do
   <<~HTML
@@ -129,12 +130,19 @@ post '/token' do
 
   case params[:grant_type]
   when 'authorization_code'
-    logger.info params
-    required_params :code, :redirect_uri
+    required_params :code, :redirect_uri, :code_verifier
 
     code = $codes.delete(params[:code])
-    logger.info code
     halt 400, json(error: 'invalid_grant') if code.nil? || code[:request][:client_id] != @client.id || code[:request][:redirect_uri] != params[:redirect_uri]
+
+    code_challenge = case code[:request][:code_challenge_method]
+                     when 'plain'
+                       params[:code_verifier]
+                     when 'S256'
+                       OpenSSL::Digest::SHA256.base64digest(params[:code_verifier])
+                     end
+
+    halt 400, json('invalid_request') if code_challenge.nil? || code_challenge != code[:request][:code_challenge]
 
     access_token = generate_token
     refresh_token = generate_token

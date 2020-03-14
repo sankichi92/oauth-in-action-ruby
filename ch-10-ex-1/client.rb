@@ -60,18 +60,12 @@ template :index do
   HTML
 end
 
-before do
-  session[:access_token] ||= '987tghjkiu6trfghjuytrghj'
-  session[:refresh_token] ||= 'j2r3oj32r23rmasd98uhjrk2o3i'
-end
-
 get '/' do
   erb :index
 end
 
 get '/authorize' do
   session[:access_token] = nil
-
   session[:scope] = nil
   session[:state] = SecureRandom.urlsafe_base64
 
@@ -86,6 +80,7 @@ get '/authorize' do
 end
 
 get '/callback' do
+  halt escape(params[:error]) if params[:error]
   halt 400, "State does not match: expected '#{session[:state]}' got '#{params[:state]}'" if session[:state].nil? || params[:state] != session[:state]
 
   begin

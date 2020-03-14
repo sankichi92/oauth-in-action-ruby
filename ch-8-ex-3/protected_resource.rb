@@ -16,7 +16,7 @@ end
 
 set :port, 9002
 
-$db = PseudoDatabase.new(File.expand_path('../oauth-in-action-code/exercises/ch-8-ex-2/database.nosql', __dir__))
+$db = PseudoDatabase.new(File.expand_path('../oauth-in-action-code/exercises/ch-8-ex-3/database.nosql', __dir__))
 
 before do
   token = request.env['HTTP_AUTHORIZATION']&.slice(%r{^Bearer +([a-z0-9\-._‾+/]+=*)}i, 1) || params[:access_token]
@@ -42,6 +42,10 @@ get '/helloWorld' do
                "Invalid language: #{escape(params[:language])}"
              end
 
-  headers 'X-Content-Type-Options' => 'nosniff', 'X-XSS-Protection' => '1; mode=block'
+  headers(
+    'X-Content-Type-Options' => 'nosniff',
+    'X-XSS-Protection' => '1; mode=block',
+    'Strict-Transport-Security' => 'max-age=31536000',
+  )
   json greeting: greeting
 end

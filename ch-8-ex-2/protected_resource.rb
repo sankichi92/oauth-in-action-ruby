@@ -21,10 +21,7 @@ $db = PseudoDatabase.new(File.expand_path('../oauth-in-action-code/exercises/ch-
 before do
   token = request.env['HTTP_AUTHORIZATION']&.slice(%r{^Bearer +([a-z0-9\-._‾+/]+=*)}i, 1) || params[:access_token]
   logger.info "Incoming token: #{token}"
-  halt 401 if token.nil?
-
-  @access_token = $db.find { |row| row[:access_token] == token }
-  halt 401 if @access_token.nil?
+  halt 401 if token.nil? || $db.none? { |row| row[:access_token] == token }
 end
 
 get '/helloWorld' do

@@ -9,6 +9,7 @@ require 'sinatra'
 
 AUTHORIZATION_ENDPOINT = 'http://localhost:9001/authorize'
 TOKEN_ENDPOINT = 'http://localhost:9001/token'
+REVOCATION_ENDPOINT = 'http://localhost:9001/revoke'
 
 CLIENT_ID = 'oauth-client-1'
 CLIENT_SECRET = 'oauth-client-secret-1'
@@ -55,14 +56,12 @@ template :index do
         </ul>
         <a href="/authorize">Get OAuth Token</a>
         <a href="/fetch_resource">Get Protected Resource</a>
+        <form action="/revoke" method="POST">
+          <input type="submit" value="Revoke OAuth Token">
+        </form>
       </body>
     </html>
   HTML
-end
-
-before do
-  session[:access_token] ||= '987tghjkiu6trfghjuytrghj'
-  session[:refresh_token] ||= 'j2r3oj32r23rmasd98uhjrk2o3i'
 end
 
 get '/' do
@@ -127,5 +126,24 @@ get '/fetch_resource' do
   else
     logger.error response.inspect
     error "Unable to fetch resource, server response: #{response.code}"
+  end
+end
+
+post '/revoke' do
+  token_uri = URI.parse(REVOCATION_ENDPOINT)
+  token_uri.user = CLIENT_ID
+  token_uri.password = CLIENT_SECRET
+
+  response = Net::HTTP.post_form(token_uri, { token: session[:access_token] })
+
+  session[:access_token] = nil
+  session[:refresh_token] = nil
+  session[:scope] = nil
+
+  case response
+  when Net::HTTPSuccess
+    erb :index
+  else
+    error "Unable to revoke token, server response: #{response.code}"
   end
 end

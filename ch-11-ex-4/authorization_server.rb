@@ -12,6 +12,7 @@ require_relative '../lib/pseudo_database'
 
 Client = Struct.new(:id, :secret, :redirect_uris, :scope, keyword_init: true)
 User = Struct.new(:sub, :username, :name, :email, :email_verified, :password, keyword_init: true)
+Resource = Struct.new(:id, :secret, keyword_init: true)
 
 CLIENTS = [
   Client.new(
@@ -46,9 +47,16 @@ USERS = [
   ),
 ].freeze
 
+RESOURCES = [
+  Resource.new(
+    id: 'protected-resource-1',
+    secret: 'protected-resource-secret-1',
+  ),
+].freeze
+
 set :port, 9001
 
-$db = PseudoDatabase.new(File.expand_path('../oauth-in-action-code/exercises/ch-6-ex-3/database.nosql', __dir__)).tap(&:reset)
+$db = PseudoDatabase.new(File.expand_path('./database.nosql', __dir__)).tap(&:reset)
 
 template :approve do
   <<~HTML
@@ -85,20 +93,23 @@ template :approve do
 end
 
 helpers do
-  def basic_auth!
+  def basic_auth!(&authenticator)
     auth = Rack::Auth::Basic::Request.new(request.env)
-    client_id, secret = if auth.provided? && auth.basic?
-                          auth.credentials
-                        else
-                          required_params :client_id, :client_secret
-                          [params[:client_id], params[:client_secret]]
-                        end
-    @client = CLIENTS.find { |c| c.id == client_id }
-    halt 401 if @client.nil? || secret != @client.secret
+    halt 401 unless auth.provided?
+    halt 400 unless auth.basic?
+    halt 401 unless authenticator.call(*auth.credentials)
   end
 
   def generate_token
     SecureRandom.urlsafe_base64
+  end
+
+  def get_client(client_id)
+    CLIENTS.find { |client| client.id == client_id }
+  end
+
+  def get_protected_resource(resource_id)
+    RESOURCES.find { |resource| resource.id == resource_id }
   end
 
   def get_user(username)
@@ -112,7 +123,7 @@ $codes = {}
 get '/authorize' do
   required_params :client_id, :redirect_uri, :scope
 
-  @client = CLIENTS.find { |c| c.id == params[:client_id] }
+  @client = get_client(params[:client_id])
   halt 400, 'Unknown client' if @client.nil?
   halt 400, 'Invalid redirect URI' unless @client.redirect_uris.include?(params[:redirect_uri])
 
@@ -144,15 +155,14 @@ post '/approve' do
 
   case original_params[:response_type]
   when 'code'
-    client = CLIENTS.find { |c| c.id == original_params[:client_id] }
+    client = get_client(original_params[:client_id])
     unless params[:scope].difference(client.scope).empty?
       redirect_uri.query = build_query(error: 'invalid_scope')
       redirect redirect_uri
     end
 
-    user = get_user(params[:user])
     code = SecureRandom.urlsafe_base64(6)
-    $codes[code] = { request: original_params, scope: params[:scope], user: user }
+    $codes[code] = { request: original_params, scope: params[:scope], username: params[:user] }
 
     redirect_uri.query = build_query(code: code, state: original_params[:state])
   else
@@ -163,7 +173,10 @@ post '/approve' do
 end
 
 post '/token' do
-  basic_auth!
+  basic_auth! do |id, secret|
+    @client = get_client(id)
+    !@client.nil? && secret == @client.secret
+  end
 
   required_params :grant_type
 
@@ -174,7 +187,7 @@ post '/token' do
     code = $codes.delete(params[:code])
     if code && code[:request][:client_id] == @client.id
       access_token = generate_token
-      $db.insert({ access_token: access_token, client_id: @client.id, scope: code[:scope] })
+      $db.insert({ access_token: access_token, client_id: @client.id, scope: code[:scope], username: code[:username] })
       json access_token: access_token, token_type: 'Bearer', scope: code[:scope].join(' ')
     else
       halt 400, json(error: 'invalid_grant')
@@ -182,4 +195,27 @@ post '/token' do
   else
     halt 400, json(error: 'unsupported_grant_type')
   end
+end
+
+post '/introspect' do
+  basic_auth! do |id, secret|
+    @resource = get_protected_resource(id)
+    !@resource.nil? && secret == @resource.secret
+  end
+
+  required_params :token
+
+  token_hash = $db.find { |row| row[:access_token] == params[:token] }
+  halt json(active: false) if token_hash.nil?
+
+  user = get_user(token_hash[:username])
+  json(
+    active: true,
+    iss: "http://#{settings.bind}:#{settings.port}/",
+    aud: 'http://localhost:9002/',
+    sub: user&.sub,
+    username: user&.username,
+    scope: token_hash[:scope].join(' '),
+    client_id: token_hash[:client_id],
+  )
 end

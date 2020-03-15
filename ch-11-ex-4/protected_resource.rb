@@ -2,6 +2,7 @@
 
 require 'json'
 require 'net/http'
+require 'uri'
 
 require 'sinatra'
 require 'sinatra/json'
@@ -22,15 +23,16 @@ before do
   introspection_uri.user = RESOURCE_ID
   introspection_uri.password = RESOURCE_SECRET
 
+  logger.info 'Introspecting token'
   response = Net::HTTP.post_form(introspection_uri, { token: token })
-  logger.info "Got introspection response: #{response.body}"
 
   case response
   when Net::HTTPSuccess
-    @access_token = JSON.parse(response.body, symbolize_names: true)
-    halt 401 unless @access_token[:active]
+    logger.info "Got introspection response: #{response.body}"
+    access_token = JSON.parse(response.body, symbolize_names: true)
+    halt 401 unless access_token[:active]
   else
-    error "Unable to introspect token, server response: #{response.code}"
+    halt "Unable to introspect token: #{response.code} #{response.message}\n#{response.body}"
   end
 end
 

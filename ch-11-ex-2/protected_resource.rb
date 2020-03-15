@@ -6,11 +6,6 @@ require 'sinatra/json'
 
 SHARED_TOKEN_SECRET = 'shared OAuth token secret!'
 
-RESOURCE = {
-  name: 'Protected Resource',
-  description: 'This data has been protected by OAuth 2.0',
-}.freeze
-
 set :port, 9002
 
 before do
@@ -32,14 +27,16 @@ before do
         verify_iat: true,
       },
     )
+    logger.info "JWT payload: #{payload}"
   rescue JWT::DecodeError => e
-    logger.error e
+    logger.info e.inspect
     halt 401
   end
-
-  logger.info payload.inspect
 end
 
 post '/resource' do
-  json RESOURCE
+  json(
+    name: 'Protected Resource',
+    description: 'This data has been protected by OAuth 2.0',
+  )
 end

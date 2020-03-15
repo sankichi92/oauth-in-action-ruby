@@ -5,13 +5,13 @@ require 'sinatra/json'
 
 require_relative '../lib/pseudo_database'
 
+AccessToken = Struct.new(:access_token, :scope)
+
 PRODUCE = {
   fruit: %w[apple banana kiwi],
   veggies: %w[lettuce onion potato],
   meats: %w[bacon steak chicken\ breast],
 }.freeze
-
-AccessToken = Struct.new(:access_token, :scope)
 
 set :port, 9002
 
@@ -23,11 +23,9 @@ before do
   halt 401 if token.nil?
 
   access_token_hash = $db.find { |row| row[:access_token] == token }
-  if access_token_hash
-    @access_token = AccessToken.new(access_token_hash.fetch(:access_token), access_token_hash.fetch(:scope))
-  else
-    halt 401
-  end
+  halt 401 if access_token_hash.nil?
+
+  @access_token = AccessToken.new(access_token_hash.fetch(:access_token), access_token_hash.fetch(:scope))
 end
 
 get '/produce' do

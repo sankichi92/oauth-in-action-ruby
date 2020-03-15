@@ -12,10 +12,11 @@ set :port, 9002
 enable :method_override
 
 $db = PseudoDatabase.new(File.expand_path('../oauth-in-action-code/exercises/ch-4-ex-2/database.nosql', __dir__))
+$words = []
 
 helpers do
-  def require_scope(scope)
-    unless @access_token.scope.include?(scope)
+  def required_scope(scope)
+    unless @access_token.scope.include?(scope.to_s)
       headers 'WWW-Authenticate' => %(Bearer realm=#{settings.bind}:#{settings.port}, error="insufficient_scope", scope="#{scope}")
       halt 403
     end
@@ -28,28 +29,24 @@ before do
   halt 401 if token.nil?
 
   access_token_hash = $db.find { |row| row[:access_token] == token }
-  if access_token_hash
-    @access_token = AccessToken.new(access_token_hash.fetch(:access_token), access_token_hash.fetch(:scope))
-  else
-    halt 401
-  end
+  halt 401 if access_token_hash.nil?
+
+  @access_token = AccessToken.new(access_token_hash.fetch(:access_token), access_token_hash.fetch(:scope))
 end
 
-$words = []
-
 get '/words' do
-  require_scope 'read'
+  required_scope :read
   json words: $words.join(' '), timestamp: Time.now.to_i
 end
 
 post '/words' do
-  require_scope 'write'
+  required_scope :write
   $words.push(params[:word]) if params[:word]
   halt 201
 end
 
 delete '/words' do
-  require_scope 'delete'
+  required_scope :delete
   $words.pop
   halt 204
 end

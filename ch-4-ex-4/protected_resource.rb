@@ -5,6 +5,8 @@ require 'sinatra/json'
 
 require_relative '../lib/pseudo_database'
 
+AccessToken = Struct.new(:access_token, :scope, :user, keyword_init: true)
+
 FAVORITES = {
   alice: {
     movies: ['The Multidmensional Vector', 'Space Fights', 'Jewelry Boss'],
@@ -18,8 +20,6 @@ FAVORITES = {
   },
 }.freeze
 
-AccessToken = Struct.new(:access_token, :scope, :user, keyword_init: true)
-
 set :port, 9002
 
 $db = PseudoDatabase.new(File.expand_path('../oauth-in-action-code/exercises/ch-4-ex-4/database.nosql', __dir__))
@@ -30,11 +30,9 @@ before do
   halt 401 if token.nil?
 
   access_token_hash = $db.find { |row| row[:access_token] == token }
-  if access_token_hash
-    @access_token = AccessToken.new(**access_token_hash.slice(:access_token, :scope, :user))
-  else
-    halt 401
-  end
+  halt 401 if access_token_hash.nil?
+
+  @access_token = AccessToken.new(**access_token_hash.slice(:access_token, :scope, :user))
 end
 
 get '/favorites' do

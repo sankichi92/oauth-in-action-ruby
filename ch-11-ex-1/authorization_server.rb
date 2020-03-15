@@ -29,7 +29,6 @@ USERS = [
     name: 'Alice',
     email: 'alice.wonderland@example.com',
     email_verified: true,
-    password: 'password',
   ),
   User.new(
     sub: '1ZT5-OE63-57383B',
@@ -37,7 +36,6 @@ USERS = [
     name: 'Bob',
     email: 'bob.loblob@example.net',
     email_verified: false,
-    password: 'this is my secret password',
   ),
   User.new(
     sub: 'F5Q1-L6LGG-959FS',
@@ -45,7 +43,6 @@ USERS = [
     name: 'Carol',
     email: 'carol.lewis@example.net',
     email_verified: true,
-    password: 'user password!',
   ),
 ].freeze
 
@@ -67,6 +64,12 @@ template :approve do
         </ul>
         <form action="/approve" method="POST">
           <input type="hidden" name="request_id" value="<%= @request_id %>">
+          <label for="user">Select user:</label>
+          <select name="user" id="user">
+            <option value="alice">Alice</option>
+            <option value="bob">Bob</option>
+            <option value="carol">Carol</option>
+          </select>
           <p>The client is requesting access to the following:</p>
           <ul>
             <% @scope.each do |scope| %>
@@ -147,24 +150,11 @@ post '/approve' do
       redirect redirect_uri
     end
 
+    user = get_user(params[:user])
     code = SecureRandom.urlsafe_base64(6)
-    $codes[code] = { request: original_params, scope: params[:scope] }
+    $codes[code] = { request: original_params, scope: params[:scope], user: user }
 
     redirect_uri.query = build_query(code: code, state: original_params[:state])
-  when 'token'
-    client = CLIENTS.find { |c| c.id == original_params[:client_id] }
-    unless params[:scope].difference(client.scope).empty?
-      redirect_uri.fragment = build_query(error: 'invalid_scope')
-      redirect redirect_uri
-    end
-
-    access_token = generate_token
-    $db.insert({ access_token: access_token, client_id: client.id, scope: params[:scope] })
-
-    response_body_hash = { access_token: access_token, token_type: 'Bearer', scope: params[:scope].join(' ') }
-    response_body_hash.merge!(state: original_params[:state]) if original_params[:state]
-
-    redirect_uri.fragment = build_query(response_body_hash)
   else
     redirect_uri.query = build_query(error: 'unsupported_response_type')
   end
@@ -184,61 +174,11 @@ post '/token' do
     code = $codes.delete(params[:code])
     if code && code[:request][:client_id] == @client.id
       access_token = generate_token
-      refresh_token = generate_token
-
-      $db.insert(
-        { access_token: access_token, client_id: @client.id, scope: code[:scope] },
-        { refresh_token: refresh_token, client_id: @client.id, scope: code[:scope] },
-      )
-
-      json access_token: access_token, token_type: 'Bearer', refresh_token: refresh_token, scope: code[:scope].join(' ')
+      $db.insert({ access_token: access_token, client_id: @client.id, scope: code[:scope] })
+      json access_token: access_token, token_type: 'Bearer', scope: code[:scope].join(' ')
     else
       halt 400, json(error: 'invalid_grant')
     end
-  when 'refresh_token'
-    required_params :refresh_token
-
-    token_hashes = $db.to_a
-    token_hashes.each_with_index do |token_hash, i|
-      if params[:refresh_token] == token_hash[:refresh_token]
-        if @client.id == token_hash[:client_id]
-          access_token = generate_token
-          token_hashes << { access_token: access_token, client_id: @client.id, scope: token_hash[:scope] }
-          halt json(access_token: access_token, token_type: 'Bearer', refresh_token: token_hash[:refresh_token], scope: token_hash[:scope])
-        else
-          token_hashes.delete_at(i)
-        end
-      end
-    ensure
-      $db.replace(*token_hashes)
-    end
-
-    halt 400, json(error: 'invalid_grant')
-  when 'client_credentials'
-    required_params :scope
-    halt 400, json(error: 'invalid_scope') unless params[:scope].split.difference(@client.scope).empty?
-
-    access_token = generate_token
-    $db.insert({ access_token: access_token, client_id: @client.id, scope: params[:scope] })
-
-    json access_token: access_token, token_type: 'Bearer', scope: params[:scope]
-  when 'password'
-    required_params :username, :password, :scope
-
-    user = get_user(params[:username])
-    halt 401, json(error: 'invalid_grant') if user.nil? || params[:password] != user.password
-
-    halt 400, json(error: 'invalid_scope') unless params[:scope].split.difference(@client.scope).empty?
-
-    access_token = generate_token
-    refresh_token = generate_token
-
-    $db.insert(
-      { access_token: access_token, client_id: @client.id, scope: params[:scope] },
-      { refresh_token: refresh_token, client_id: @client.id, scope: params[:scope] },
-    )
-
-    json access_token: access_token, token_type: 'Bearer', refresh_token: refresh_token, scope: params[:scope]
   else
     halt 400, json(error: 'unsupported_grant_type')
   end

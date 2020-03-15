@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require 'base64'
 require 'securerandom'
 require 'uri'
 
@@ -7,8 +8,6 @@ require 'rack/auth/basic'
 require 'sinatra'
 require 'sinatra/json'
 require 'sinatra/required_params'
-
-require_relative '../lib/pseudo_database'
 
 Client = Struct.new(:id, :secret, :redirect_uris, :scope, keyword_init: true)
 User = Struct.new(:sub, :username, :name, :email, :email_verified, :password, keyword_init: true)
@@ -47,8 +46,6 @@ USERS = [
 ].freeze
 
 set :port, 9001
-
-$db = PseudoDatabase.new(File.expand_path('../oauth-in-action-code/exercises/ch-6-ex-3/database.nosql', __dir__)).tap(&:reset)
 
 template :approve do
   <<~HTML
@@ -97,8 +94,23 @@ helpers do
     halt 401 if @client.nil? || secret != @client.secret
   end
 
-  def generate_token
-    SecureRandom.urlsafe_base64
+  def generate_jwt(aud:, sub:)
+    now = Time.now
+
+    header = {
+      typ: 'JWT',
+      alg: 'none',
+    }
+    payload = {
+      iss: "http://#{settings.bind}:#{settings.port}/",
+      sub: sub,
+      aud: aud,
+      iat: now.to_i,
+      exp: now.to_i + 5 * 60,
+      jti: SecureRandom.alphanumeric(8),
+    }
+
+    [header, payload].map(&:to_json).map { |json| Base64.urlsafe_encode64(json, padding: false) }.join('.') + '.'
   end
 
   def get_user(username)
@@ -173,8 +185,7 @@ post '/token' do
 
     code = $codes.delete(params[:code])
     if code && code[:request][:client_id] == @client.id
-      access_token = generate_token
-      $db.insert({ access_token: access_token, client_id: @client.id, scope: code[:scope] })
+      access_token = generate_jwt(aud: URI.join(code[:request][:redirect_uri], '/'), sub: code[:user].sub)
       json access_token: access_token, token_type: 'Bearer', scope: code[:scope].join(' ')
     else
       halt 400, json(error: 'invalid_grant')

@@ -7,6 +7,9 @@ Metrics/AbcSize:
 Metrics/BlockLength:
   Max: 55
 
+Metrics/MethodLength:
+  Max: 20
+
 Style/GlobalVars:
   Enabled: false
 

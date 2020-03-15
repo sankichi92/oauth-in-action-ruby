@@ -1,10 +1,10 @@
 # frozen_string_literal: true
 
-require 'base64'
-require 'json'
-
+require 'jwt'
 require 'sinatra'
 require 'sinatra/json'
+
+SHARED_TOKEN_SECRET = 'shared OAuth token secret!'
 
 RESOURCE = {
   name: 'Protected Resource',
@@ -18,15 +18,26 @@ before do
   logger.info "Incoming token: #{token}"
   halt 401 if token.nil?
 
-  _encoded_header, encoded_payload, = token.split('.')
-  payload = JSON.parse(Base64.urlsafe_decode64(encoded_payload), symbolize_names: true)
+  begin
+    payload, _header = JWT.decode(
+      token,
+      SHARED_TOKEN_SECRET,
+      true,
+      {
+        algorithm: 'HS256',
+        iss: 'http://localhost:9001/',
+        aud: "http://#{settings.bind}:#{settings.port}/",
+        verify_iss: true,
+        verify_aud: true,
+        verify_iat: true,
+      },
+    )
+  rescue JWT::DecodeError => e
+    logger.error e
+    halt 401
+  end
+
   logger.info payload.inspect
-
-  now = Time.now
-
-  halt 401 if payload[:iss] != 'http://localhost:9001/'
-  halt 401 if payload[:aud].include?("http://#{settings.bind}:#{settings.port}/")
-  halt 401 if payload[:iat] > now.to_i || payload[:exp] < now.to_i
 end
 
 post '/resource' do

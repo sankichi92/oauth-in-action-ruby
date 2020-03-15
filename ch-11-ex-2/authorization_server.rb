@@ -1,9 +1,9 @@
 # frozen_string_literal: true
 
-require 'base64'
 require 'securerandom'
 require 'uri'
 
+require 'jwt'
 require 'rack/auth/basic'
 require 'sinatra'
 require 'sinatra/json'
@@ -44,6 +44,8 @@ USERS = [
     email_verified: true,
   ),
 ].freeze
+
+SHARED_TOKEN_SECRET = 'shared OAuth token secret!'
 
 set :port, 9001
 
@@ -94,23 +96,18 @@ helpers do
     halt 401 if @client.nil? || secret != @client.secret
   end
 
-  def generate_jwt(aud:, sub:)
+  def generate_jwt(sub:)
     now = Time.now
-
-    header = {
-      typ: 'JWT',
-      alg: 'none',
-    }
     payload = {
       iss: "http://#{settings.bind}:#{settings.port}/",
       sub: sub,
-      aud: aud,
+      aud: 'http://localhost:9002/',
       iat: now.to_i,
       exp: now.to_i + 5 * 60,
       jti: SecureRandom.alphanumeric(8),
     }
 
-    [header, payload].map(&:to_json).map { |json| Base64.urlsafe_encode64(json, padding: false) }.join('.') + '.'
+    JWT.encode(payload, SHARED_TOKEN_SECRET, 'HS256', { type: 'JWT' })
   end
 
   def get_user(username)
@@ -185,7 +182,7 @@ post '/token' do
 
     code = $codes.delete(params[:code])
     if code && code[:request][:client_id] == @client.id
-      access_token = generate_jwt(aud: URI.join(code[:request][:redirect_uri], '/'), sub: code[:user].sub)
+      access_token = generate_jwt(sub: code[:user].sub)
       json access_token: access_token, token_type: 'Bearer', scope: code[:scope].join(' ')
     else
       halt 400, json(error: 'invalid_grant')

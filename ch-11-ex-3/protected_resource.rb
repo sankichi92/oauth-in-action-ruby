@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'openssl'
+
 require 'jwt'
 require 'sinatra'
 require 'sinatra/json'
@@ -11,6 +13,18 @@ RESOURCE = {
   description: 'This data has been protected by OAuth 2.0',
 }.freeze
 
+RSA_KEY = <<~PEM
+  -----BEGIN PUBLIC KEY-----
+  MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA2pZzFsNJZV1pC3TSuD0x
+  YbsjgNN+oM1uGjphK/ZOHfmTS/1dSl2icr1bjV/T+oP8uy/LD5JHOxPvZhf9bgLx
+  BtkBA19jr3l86k/wKQaThVnoeyE1dhUSd9qDvtWDuyzjg78st8Q9/M5Dk7Kzs/Ha
+  VQvZNFkczOnEHGKXWpFKOdlE5WhDLrBFgGeNt+vdvQE9MJGNnPXrRAVDYlkKPpLw
+  L8HtmZqY+BeBUlk1MAMoRBn0PT0qzV2OXJnnev5UM2MO9lyMeWJaHw/7k/Ybf6gG
+  8C/gc0goZwaavToM5bv2qRHckP/PuqfDsdgMGKVXm9GLLz5RqBqvvYLX263e7THY
+  WwIDAQAB
+  -----END PUBLIC KEY-----
+PEM
+
 set :port, 9002
 
 before do
@@ -21,10 +35,10 @@ before do
   begin
     payload, _header = JWT.decode(
       token,
-      SHARED_TOKEN_SECRET,
+      OpenSSL::PKey::RSA.new(RSA_KEY),
       true,
       {
-        algorithm: 'HS256',
+        algorithm: 'RS256',
         iss: 'http://localhost:9001/',
         aud: "http://#{settings.bind}:#{settings.port}/",
         verify_iss: true,

@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require 'openssl'
 require 'securerandom'
 require 'uri'
 
@@ -45,7 +46,35 @@ USERS = [
   ),
 ].freeze
 
-SHARED_TOKEN_SECRET = 'shared OAuth token secret!'
+RSA_KEY = <<~PEM
+  -----BEGIN RSA PRIVATE KEY-----
+  MIIEpAIBAAKCAQEA2pZzFsNJZV1pC3TSuD0xYbsjgNN+oM1uGjphK/ZOHfmTS/1d
+  Sl2icr1bjV/T+oP8uy/LD5JHOxPvZhf9bgLxBtkBA19jr3l86k/wKQaThVnoeyE1
+  dhUSd9qDvtWDuyzjg78st8Q9/M5Dk7Kzs/HaVQvZNFkczOnEHGKXWpFKOdlE5WhD
+  LrBFgGeNt+vdvQE9MJGNnPXrRAVDYlkKPpLwL8HtmZqY+BeBUlk1MAMoRBn0PT0q
+  zV2OXJnnev5UM2MO9lyMeWJaHw/7k/Ybf6gG8C/gc0goZwaavToM5bv2qRHckP/P
+  uqfDsdgMGKVXm9GLLz5RqBqvvYLX263e7THYWwIDAQABAoIBAQDT9raNqTuABu+5
+  A0TfEb/UFINeBjixt+N/nYLi/YpMuNpkAsG3Pksr1oFz+yv0ro6h+buAUwmtuSwZ
+  pUPErSeKy12XJqXk3/sIwBGTxuPAmSm+VLqh0ddBz+yXXjbKh8Hr3LOBU9QEVQPk
+  spJd+TYN6Fpsz8kEz96y48v/MAp5QnMXzBtRWHT0Mdp1Jd5Qa+mFNEbVBi/koqh4
+  hb3rPO50LFMAT6Bds6q7aZ8iVI6Tkx8TAbARWWTmuDq2A7BDl25L0w/E7IrobubR
+  EWmENalygZfq56hRJ+aMooU0MU6ou5GVmJfezgdlO7y7auYrG2aMCnapk1GMdPxO
+  3nN0tDj5AoGBAPD3cSKSyPv5d3GQPJAobTIxrt0YCHa1eu/cwn24Lk2nRLixPKfy
+  J0gnWlPtbVHHAE8FzRTiD5p++F1ce1jaGUU7ihBb0QLhcxO5v2wVquPo/NVzG+IV
+  EABN+grh//15DoaIffEJTYzWPTmCtOxVF53aBl4hj81duxwpWGkFukBtAoGBAOg5
+  lkqjVy3TfuzhHMPgjOWlKCUIDSh1quoZ/QSenZqSqU2nnkIM4xG9MBZClzAMaCIo
+  FUOfp+s0W+OgS+wlHpTSUlbk+TO9Xa5dfmPSOjb2m1hTPc4GZGoysWJIen+mlocG
+  NuoG1iamrUrVKw9jOVOFIGpTrYCteaNkA2lhMs7nAoGAW3IcHjnESlOe75sEUNT2
+  s7DFIqSnOZ2fnP2TVbCa6d9Lpiek1DuCitBcaDNXZEx4IoUaEg3ETCZZTNz29n42
+  Tt7Mg27EwCocyOSZ74O9iaZ2pO59K2xA2Uy+Unj39BKH36hW2y1jn8oCDBw9Wt7k
+  CoSeHATylMY4ZvSN17VTvHUCgYEArW3UgAlcoizBLccw5Fhe4WJmiMFqkjzOV+bw
+  vvJ2YWoGZqg32LwnGKhhsT4qCwg4/MlSmB40GcQQm/6qtMFEBYDNXXfDZJCX1hCc
+  w4/NSh8CBQSls6eydl1FfFEEqzCOWmiZuk1AwbzYznpEnklMFsPlYYL8oIztusiG
+  g7zDZSECgYB0lrU9G2D0n8zY9HCd8ytfCJlRFKJhqJb63QEghQcMUrvU3bm6kLtX
+  WC16rAhuZsn46lgxjyviz1UUUx2tlhygGhEwG45pWv4ZIPd6S9T6yGUSZKy61hE1
+  gVbjMuPkC8RYeWEgLoTckyKrtrX1pKMDh6PsXar38wsBGn7bFNx14A==
+  -----END RSA PRIVATE KEY-----
+PEM
 
 set :port, 9001
 
@@ -107,7 +136,8 @@ helpers do
       jti: SecureRandom.alphanumeric(8),
     }
 
-    JWT.encode(payload, SHARED_TOKEN_SECRET, 'HS256', { type: 'JWT' })
+    rsa_private = OpenSSL::PKey::RSA.new(RSA_KEY)
+    JWT.encode(payload, rsa_private, 'RS256', { type: 'JWT', kid: 'authserver' })
   end
 
   def get_user(username)

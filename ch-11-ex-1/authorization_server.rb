@@ -94,7 +94,7 @@ helpers do
     halt 401 if @client.nil? || secret != @client.secret
   end
 
-  def generate_jwt(aud:, sub:)
+  def generate_jwt(sub:)
     now = Time.now
 
     header = {
@@ -104,7 +104,7 @@ helpers do
     payload = {
       iss: "http://#{settings.bind}:#{settings.port}/",
       sub: sub,
-      aud: aud,
+      aud: 'http://localhost:9002/',
       iat: now.to_i,
       exp: now.to_i + 5 * 60,
       jti: SecureRandom.alphanumeric(8),
@@ -185,7 +185,7 @@ post '/token' do
 
     code = $codes.delete(params[:code])
     if code && code[:request][:client_id] == @client.id
-      access_token = generate_jwt(aud: URI.join(code[:request][:redirect_uri], '/'), sub: code[:user].sub)
+      access_token = generate_jwt(sub: code[:user].sub)
       json access_token: access_token, token_type: 'Bearer', scope: code[:scope].join(' ')
     else
       halt 400, json(error: 'invalid_grant')

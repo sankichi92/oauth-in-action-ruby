@@ -23,7 +23,7 @@ CLIENTS = [
 
 set :port, 9001
 
-$db = PseudoDatabase.new(File.expand_path('../oauth-in-action-code/exercises/ch-5-ex-3/database.nosql', __dir__)).tap(&:reset)
+$db = PseudoDatabase.new(File.expand_path('../oauth-in-action-code/exercises/ch-11-ex-5/database.nosql', __dir__)).tap(&:reset)
 
 template :approve do
   <<~HTML
@@ -171,4 +171,16 @@ post '/token' do
   else
     halt 400, json(error: 'unsupported_grant_type')
   end
+end
+
+post '/revoke' do
+  basic_auth!
+
+  required_params :token
+
+  token_hashes = $db.to_a
+  token_hashes.reject! { |token_hash| token_hash[:access_token] == params[:token] }
+  $db.replace(*token_hashes)
+
+  halt 204
 end

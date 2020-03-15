@@ -1,9 +1,10 @@
 # frozen_string_literal: true
 
+require 'base64'
+require 'json'
+
 require 'sinatra'
 require 'sinatra/json'
-
-require_relative '../lib/pseudo_database'
 
 RESOURCE = {
   name: 'Protected Resource',
@@ -12,12 +13,20 @@ RESOURCE = {
 
 set :port, 9002
 
-$db = PseudoDatabase.new(File.expand_path('../oauth-in-action-code/exercises/ch-4-ex-1/database.nosql', __dir__))
-
 before do
-  access_token = request.env['HTTP_AUTHORIZATION']&.slice(%r{^Bearer +([a-z0-9\-._‾+/]+=*)}i, 1) || params[:access_token]
-  logger.info "Incoming token: #{access_token}"
-  halt 401 if access_token.nil? || $db.none? { |row| row[:access_token] == access_token }
+  token = request.env['HTTP_AUTHORIZATION']&.slice(%r{^Bearer +([a-z0-9\-._‾+/]+=*)}i, 1) || params[:access_token]
+  logger.info "Incoming token: #{token}"
+  halt 401 if token.nil?
+
+  _encoded_header, encoded_payload, = token.split('.')
+  payload = JSON.parse(Base64.urlsafe_decode64(encoded_payload), symbolize_names: true)
+  logger.info payload.inspect
+
+  now = Time.now
+
+  halt 401 if payload[:iss] != 'http://localhost:9001/'
+  halt 401 if payload[:aud].include?("http://#{settings.bind}:#{settings.port}/")
+  halt 401 if payload[:iat] > now.to_i || payload[:exp] < now.to_i
 end
 
 post '/resource' do

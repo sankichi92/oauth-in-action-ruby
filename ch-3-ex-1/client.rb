@@ -6,16 +6,16 @@ require 'securerandom'
 require 'uri'
 
 require 'sinatra'
+require 'sinatra/required_params'
 
 AUTHORIZATION_ENDPOINT = 'http://localhost:9001/authorize'
 TOKEN_ENDPOINT = 'http://localhost:9001/token'
 
+PROTECTED_RESOURCE = 'http://localhost:9002/resource'
+
 CLIENT_ID = 'oauth-client-1'
 CLIENT_SECRET = 'oauth-client-secret-1'
-
 REDIRECT_URI = 'http://localhost:9000/callback'
-
-PROTECTED_RESOURCE = 'http://localhost:9002/resource'
 
 set :port, 9000
 
@@ -45,17 +45,21 @@ get '/authorize' do
   session[:access_token] = nil
   session[:state] = SecureRandom.urlsafe_base64
 
-  query = build_query(
+  authorization_uri = URI.parse(AUTHORIZATION_ENDPOINT)
+  authorization_uri.query = build_query(
     response_type: 'code',
     client_id: CLIENT_ID,
     redirect_uri: REDIRECT_URI,
     state: session[:state],
   )
-  redirect "#{AUTHORIZATION_ENDPOINT}?#{query}"
+  redirect authorization_uri
 end
 
 get '/callback' do
-  halt 400, "State does not match: expected '#{session[:state]}' got '#{params[:state]}'" if session[:state].nil? || params[:state] != session[:state]
+  required_params :code, :state
+
+  halt 400, "State does not match: expected '#{session[:state]}' got '#{escape(params[:state])}'" if params[:state] != session[:state]
+  halt escape(params[:error]) if params[:error]
 
   token_uri = URI.parse(TOKEN_ENDPOINT)
   token_uri.user = CLIENT_ID
@@ -73,10 +77,9 @@ get '/callback' do
   when Net::HTTPSuccess
     body = JSON.parse(response.body)
     session[:access_token] = body['access_token']
-    erb :index
+    redirect to('/')
   else
-    logger.error response.inspect
-    error "Unable to fetch access token, server response: #{response.code}"
+    halt "Unable to fetch access token: #{response.code} #{response.message}\n#{response.body}"
   end
 end
 
@@ -95,7 +98,6 @@ get '/fetch_resource' do
     halt response.body
   else
     session[:access_token] = nil
-    logger.error response.inspect
-    error "Unable to fetch resource, server response: #{response.code}"
+    halt "Unable to fetch resource: #{response.code} #{response.message}\n#{response.body}"
   end
 end

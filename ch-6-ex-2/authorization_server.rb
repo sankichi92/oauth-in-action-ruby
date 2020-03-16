@@ -21,9 +21,11 @@ CLIENTS = [
   ),
 ].freeze
 
-set :port, 9001
-
 $db = PseudoDatabase.new(File.expand_path('../oauth-in-action-code/exercises/ch-6-ex-2/database.nosql', __dir__)).tap(&:reset)
+$requests = {}
+$codes = {}
+
+set :port, 9001
 
 template :approve do
   <<~HTML
@@ -54,16 +56,20 @@ template :approve do
 end
 
 helpers do
-  def basic_auth!
+  def authenticate_client!
     auth = Rack::Auth::Basic::Request.new(request.env)
-    client_id, secret = if auth.provided? && auth.basic?
-                          auth.credentials
-                        else
-                          required_params :client_id, :client_secret
-                          [params[:client_id], params[:client_secret]]
-                        end
-    @client = CLIENTS.find { |c| c.id == client_id }
-    halt 401 if @client.nil? || secret != @client.secret
+    client_id, client_secret = if auth.provided? && auth.basic?
+                                 auth.credentials
+                               else
+                                 required_params :client_id, :client_secret
+                                 [params[:client_id], params[:client_secret]]
+                               end
+    @client = get_client(client_id)
+    halt 401, json(error: 'invalid_client') if @client.nil? || client_secret != @client.secret
+  end
+
+  def get_client(client_id)
+    CLIENTS.find { |client| client.id == client_id }
   end
 
   def generate_token
@@ -71,20 +77,17 @@ helpers do
   end
 end
 
-$requests = {}
-$codes = {}
-
 get '/authorize' do
-  required_params :client_id, :redirect_uri, :scope
+  required_params :response_type, :client_id, :redirect_uri, :scope
 
-  @client = CLIENTS.find { |c| c.id == params[:client_id] }
-  halt 400, 'Unknown client' if @client.nil?
-  halt 400, 'Invalid redirect URI' unless @client.redirect_uris.include?(params[:redirect_uri])
+  @client = get_client(params[:client_id])
+  halt 400, "Unknown client: #{escape(params[:client_id])}" if @client.nil?
+  halt 400, "Invalid redirect URI: #{escape(params[:redirect_uri])}" unless @client.redirect_uris.include?(params[:redirect_uri])
 
-  redirect_uri = URI.parse(params[:redirect_uri])
   @scope = params[:scope].split
   unless @scope.difference(@client.scope).empty?
-    redirect_uri.query = build_query(error: 'invalid_scope')
+    redirect_uri = URI.parse(params[:redirect_uri])
+    redirect_uri.query = build_query({ error: 'invalid_scope', state: params[:state] }.compact)
     redirect redirect_uri
   end
 
@@ -98,50 +101,44 @@ post '/approve' do
   required_params :request_id
 
   original_params = $requests.delete(params[:request_id])
-  halt 403, 'No matching authorization request' if original_params.nil?
+  halt 403, "No matching authorization request: #{escape(params[:request_id])}" if original_params.nil?
 
   redirect_uri = URI.parse(original_params[:redirect_uri])
 
-  unless params[:approve]
-    redirect_uri.query = build_query(error: 'access_denied')
-    redirect redirect_uri
-  end
-
-  case original_params[:response_type]
-  when 'code'
-    client = CLIENTS.find { |c| c.id == original_params[:client_id] }
-    unless params[:scope].difference(client.scope).empty?
-      redirect_uri.query = build_query(error: 'invalid_scope')
-      redirect redirect_uri
+  if params[:approve]
+    case original_params[:response_type]
+    when 'code'
+      client = get_client(original_params[:client_id])
+      query_hash = if params[:scope].difference(client.scope).empty?
+                     code = SecureRandom.alphanumeric(8)
+                     $codes[code] = { request: original_params, scope: params[:scope] }
+                     { code: code, state: original_params[:state] }
+                   else
+                     { error: 'invalid_scope' }
+                   end
+      redirect_uri.query = build_query(query_hash.merge(state: original_params[:state]).compact)
+    when 'token'
+      client = get_client(original_params[:client_id])
+      query_hash = if params[:scope].difference(client.scope).empty?
+                     access_token = generate_token
+                     $db.insert({ access_token: access_token, client_id: client.id, scope: params[:scope] })
+                     { access_token: access_token, token_type: 'Bearer', scope: params[:scope].join(' ') }
+                   else
+                     { error: 'invalid_scope' }
+                   end
+      redirect_uri.fragment = build_query(query_hash.merge(state: original_params[:state]).compact)
+    else
+      redirect_uri.query = build_query({ error: 'unsupported_response_type', state: original_params[:state] }.compact)
     end
-
-    code = SecureRandom.urlsafe_base64(6)
-    $codes[code] = { request: original_params, scope: params[:scope] }
-
-    redirect_uri.query = build_query(code: code, state: original_params[:state])
-  when 'token'
-    client = CLIENTS.find { |c| c.id == original_params[:client_id] }
-    unless params[:scope].difference(client.scope).empty?
-      redirect_uri.fragment = build_query(error: 'invalid_scope')
-      redirect redirect_uri
-    end
-
-    access_token = generate_token
-    $db.insert({ access_token: access_token, client_id: client.id, scope: params[:scope] })
-
-    response_body_hash = { access_token: access_token, token_type: 'Bearer', scope: params[:scope].join(' ') }
-    response_body_hash.merge!(state: original_params[:state]) if original_params[:state]
-
-    redirect_uri.fragment = build_query(response_body_hash)
   else
-    redirect_uri.query = build_query(error: 'unsupported_response_type')
+    redirect_uri.query = build_query({ error: 'access_denied', state: original_params[:state] }.compact)
   end
 
   redirect redirect_uri
 end
 
 post '/token' do
-  basic_auth!
+  authenticate_client!
 
   required_params :grant_type
 
@@ -175,16 +172,14 @@ post '/token' do
           halt json(access_token: access_token, token_type: 'Bearer', refresh_token: token_hash[:refresh_token], scope: token_hash[:scope])
         else
           token_hashes.delete_at(i)
+          halt 400, json(error: 'invalid_grant')
         end
       end
     ensure
       $db.replace(*token_hashes)
     end
-
-    halt 400, json(error: 'invalid_grant')
   when 'client_credentials'
-    required_params :scope
-    halt 400, json(error: 'invalid_scope') unless params[:scope].split.difference(@client.scope).empty?
+    halt 400, json(error: 'invalid_scope') unless params[:scope].to_s.split.difference(@client.scope).empty?
 
     access_token = generate_token
     $db.insert({ access_token: access_token, client_id: @client.id, scope: params[:scope] })

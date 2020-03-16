@@ -20,9 +20,11 @@ CLIENTS = [
   ),
 ].freeze
 
-set :port, 9001
-
 $db = PseudoDatabase.new(File.expand_path('../oauth-in-action-code/exercises/ch-5-ex-1/database.nosql', __dir__)).tap(&:reset)
+$requests = {}
+$codes = {}
+
+set :port, 9001
 
 template :approve do
   <<~HTML
@@ -47,26 +49,24 @@ template :approve do
 end
 
 helpers do
-  def basic_auth!
+  def basic_auth!(&authenticator)
     auth = Rack::Auth::Basic::Request.new(request.env)
     halt 401, { 'WWW-Authenticate' => %(Basic realm="#{settings.bind}:#{settings.port}") }, nil unless auth.provided?
     halt 400 unless auth.basic?
+    halt 401, { 'WWW-Authenticate' => %(Basic realm="#{settings.bind}:#{settings.port}") }, nil unless authenticator.call(*auth.credentials)
+  end
 
-    username, password = auth.credentials
-    @client = CLIENTS.find { |c| c.id == username }
-    halt 401, { 'WWW-Authenticate' => %(Basic realm="#{settings.bind}:#{settings.port}") }, nil if @client.nil? || password != @client.secret
+  def get_client(client_id)
+    CLIENTS.find { |client| client.id == client_id }
   end
 end
 
-$requests = {}
-$codes = {}
-
 get '/authorize' do
-  required_params :client_id, :redirect_uri
+  required_params :response_type, :client_id, :redirect_uri
 
-  @client = CLIENTS.find { |c| c.id == params[:client_id] }
-  halt 400, 'Unknown client' if @client.nil?
-  halt 400, 'Invalid redirect URI' unless @client.redirect_uris.include?(params[:redirect_uri])
+  @client = get_client(params[:client_id])
+  halt 400, "Unknown client: #{escape(params[:client_id])}" if @client.nil?
+  halt 400, "Invalid redirect URI: #{escape(params[:redirect_uri])}" unless @client.redirect_uris.include?(params[:redirect_uri])
 
   @request_id = SecureRandom.uuid
   $requests[@request_id] = params
@@ -78,29 +78,31 @@ post '/approve' do
   required_params :request_id
 
   original_params = $requests.delete(params[:request_id])
-  halt 403, 'No matching authorization request' if original_params.nil?
+  halt 403, "No matching authorization request: #{escape(params[:request_id])}" if original_params.nil?
+
+  query_hash = if params[:approve]
+                 case original_params[:response_type]
+                 when 'code'
+                   code = SecureRandom.alphanumeric(8)
+                   $codes[code] = { request: original_params }
+                   { code: code }
+                 else
+                   { error: 'unsupported_response_type' }
+                 end
+               else
+                 { error: 'access_denied' }
+               end
 
   redirect_uri = URI.parse(original_params[:redirect_uri])
-
-  if params[:approve]
-    case original_params[:response_type]
-    when 'code'
-      code = SecureRandom.urlsafe_base64(6)
-      $codes[code] = { request: original_params }
-
-      redirect_uri.query = build_query(code: code, state: original_params[:state])
-    else
-      redirect_uri.query = build_query(error: 'unsupported_response_type')
-    end
-  else
-    redirect_uri.query = build_query(error: 'access_denied')
-  end
-
+  redirect_uri.query = build_query(query_hash.merge(state: original_params[:state]).compact)
   redirect redirect_uri
 end
 
 post '/token' do
-  basic_auth!
+  basic_auth! do |client_id, secret|
+    @client = get_client(client_id)
+    secret == @client.secret
+  end
 
   required_params :grant_type
 
@@ -110,7 +112,7 @@ post '/token' do
 
     code = $codes.delete(params[:code])
     if code && code[:request][:client_id] == @client.id
-      access_token = SecureRandom.base64
+      access_token = SecureRandom.urlsafe_base64
       $db.insert({ access_token: access_token, client_id: @client.id })
       json access_token: access_token, token_type: 'Bearer'
     else

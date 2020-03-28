@@ -10,13 +10,30 @@ require 'sinatra/required_params'
 
 AUTHORIZATION_ENDPOINT = 'http://localhost:9001/authorize'
 TOKEN_ENDPOINT = 'http://localhost:9001/token'
+REGISTRATION_ENDPOINT = 'http://localhost:9001/register'
 
 PROTECTED_RESOURCE = 'http://localhost:9002/resource'
 
-CLIENT_ID = 'oauth-client-1'
-CLIENT_SECRET = 'oauth-client-secret-1'
 REDIRECT_URI = 'http://localhost:9000/callback'
 SCOPE = 'foo'
+
+Client = Struct.new(
+  :client_id,
+  :client_secret,
+  :token_endpoint_auth_method,
+  :grant_types,
+  :response_types,
+  :redirect_uris,
+  :client_name,
+  :client_uri,
+  :logo_uri,
+  :scope,
+  :client_id_created_at,
+  :client_secret_expires_at,
+  keyword_init: true,
+)
+
+$client = Client.new
 
 set :port, 9000
 
@@ -30,6 +47,10 @@ template :index do
         <title>Client</title>
       </head>
       <body>
+        <ul>
+          <li>Client ID: <%= $client.client_id %></li>
+          <li>Client Secret: <%= $client.client_secret %></li>
+        </ul>
         <ul>
           <li>Access token value: <%= session[:access_token] %></li>
           <li>Scope value: <%= session[:scope] %></li>
@@ -45,8 +66,8 @@ end
 helpers do
   def fetch_and_save_access_token!(**params)
     token_uri = URI.parse(TOKEN_ENDPOINT)
-    token_uri.user = CLIENT_ID
-    token_uri.password = CLIENT_SECRET
+    token_uri.user = $client.client_id
+    token_uri.password = $client.client_secret
 
     logger.info "Requesting access token with params: #{params.inspect}"
     response = Net::HTTP.post_form(token_uri, params)
@@ -58,11 +79,10 @@ helpers do
     session[:refresh_token] = body['refresh_token'] if body['refresh_token']
     session[:scope] = body['scope']
   end
-end
 
-before do
-  session[:access_token] ||= '987tghjkiu6trfghjuytrghj'
-  session[:refresh_token] ||= 'j2r3oj32r23rmasd98uhjrk2o3i'
+  def register_client!
+    # TODO
+  end
 end
 
 get '/' do
@@ -70,6 +90,8 @@ get '/' do
 end
 
 get '/authorize' do
+  # TODO
+
   session[:access_token] = nil
   session[:scope] = nil
   session[:state] = SecureRandom.urlsafe_base64
@@ -77,7 +99,7 @@ get '/authorize' do
   authorization_uri = URI.parse(AUTHORIZATION_ENDPOINT)
   authorization_uri.query = build_query(
     response_type: 'code',
-    client_id: CLIENT_ID,
+    client_id: $client.client_id,
     redirect_uri: REDIRECT_URI,
     scope: SCOPE,
     state: session[:state],

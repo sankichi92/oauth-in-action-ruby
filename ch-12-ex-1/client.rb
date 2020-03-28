@@ -17,6 +17,16 @@ PROTECTED_RESOURCE = 'http://localhost:9002/resource'
 REDIRECT_URI = 'http://localhost:9000/callback'
 SCOPE = 'foo'
 
+CLIENT_METADATA = {
+  token_endpoint_auth_method: 'client_secret_basic',
+  grant_types: %w[authorization_code],
+  response_types: %w[code],
+  redirect_uris: [REDIRECT_URI],
+  client_name: 'OAuth in Action Dynamic Test Client',
+  client_uri: "http://#{settings.bind}:#{settings.port}/",
+  scope: SCOPE,
+}.freeze
+
 Client = Struct.new(
   :client_id,
   :client_secret,
@@ -81,7 +91,16 @@ helpers do
   end
 
   def register_client!
-    # TODO
+    register_uri = URI.parse(REGISTRATION_ENDPOINT)
+    http = Net::HTTP.new(register_uri.host, register_uri.port)
+
+    logger.info 'Registering client'
+    response = http.post(register_uri.path, CLIENT_METADATA.to_json, { 'Content-Type' => 'application/json' })
+    response.value
+    logger.info "Got registered client: #{response.body}"
+
+    body = JSON.parse(response.body, symbolize_names: true)
+    $client = Client.new(**body)
   end
 end
 
@@ -90,7 +109,13 @@ get '/' do
 end
 
 get '/authorize' do
-  # TODO
+  if $client.client_id.nil?
+    begin
+      register_client!
+    rescue Net::HTTPExceptions => e
+      halt "Unable to register client: #{e.message}\n#{e.response.body}"
+    end
+  end
 
   session[:access_token] = nil
   session[:scope] = nil

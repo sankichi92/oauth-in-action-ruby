@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require 'json'
 require 'securerandom'
 require 'uri'
 
@@ -24,14 +25,17 @@ Client = Struct.new(
   :scope,
   :client_id_created_at,
   :client_secret_expires_at,
+  :registration_client_uri,
+  :registration_access_token,
   keyword_init: true,
 )
+InvalidClientMetadataError = Class.new(StandardError)
 
 AVAILABLE_TOKEN_ENDPOINT_AUTH_METHODS = %w[client_secret_basic client_secret_post none].freeze
 AVAILABLE_GRANT_TYPES = %w[authorization_code refresh_token].freeze
 AVAILABLE_RESPONSE_TYPES = %w[code].freeze
 
-$db = PseudoDatabase.new(File.expand_path('../oauth-in-action-code/exercises/ch-12-ex-1/database.nosql', __dir__)).tap(&:reset)
+$db = PseudoDatabase.new(File.expand_path('../oauth-in-action-code/exercises/ch-12-ex-2/database.nosql', __dir__)).tap(&:reset)
 $requests = {}
 $codes = {}
 $clients = []
@@ -39,6 +43,8 @@ $clients = []
 use Rack::PostBodyContentTypeParser
 
 set :port, 9001
+
+enable :method_override
 
 template :approve do
   <<~HTML
@@ -69,7 +75,7 @@ template :approve do
 end
 
 helpers do
-  def authenticate_client!
+  def authenticate_client_for_token!
     auth = Rack::Auth::Basic::Request.new(request.env)
     client_id, client_secret = if auth.provided? && auth.basic?
                                  auth.credentials
@@ -81,6 +87,36 @@ helpers do
     halt 401, json(error: 'invalid_client') if @client.nil? || client_secret != @client.client_secret
   end
 
+  def authenticate_client_for_metadata!
+    @client = get_client(params[:client_id])
+    halt 404 if @client.nil?
+
+    token = request.env['HTTP_AUTHORIZATION']&.slice(%r{^Bearer +([a-z0-9\-._‾+/]+=*)}i, 1)
+    logger.info "Incoming token: #{token}"
+    halt 401 if token.nil?
+    halt 403 if token != @client.registration_access_token
+  end
+
+  def validate_client_metadata!(raw_metadata)
+    metadata = raw_metadata.slice(:token_endpoint_auth_method, :grant_types, :response_types, :redirect_uris, :client_name, :client_uri, :logo_uri, :scope)
+
+    metadata[:token_endpoint_auth_method] ||= 'client_secret_basic'
+    raise InvalidClientMetadataError unless AVAILABLE_TOKEN_ENDPOINT_AUTH_METHODS.include?(metadata[:token_endpoint_auth_method])
+
+    metadata[:grant_types] ||= %w[authorization_code]
+    raise InvalidClientMetadataError unless metadata[:grant_types].difference(AVAILABLE_GRANT_TYPES).empty?
+
+    metadata[:response_types] ||= %w[code]
+    raise InvalidClientMetadataError unless metadata[:response_types].difference(AVAILABLE_RESPONSE_TYPES).empty?
+
+    metadata[:response_types] << 'code' if metadata[:grant_types].include?('authorization_code') && !metadata[:response_types].include?('code')
+    metadata[:grant_types] << 'authorization_code' if metadata[:response_types].include?('code') && !metadata[:grant_types].include?('authorization_code')
+
+    raise InvalidClientMetadataError if !metadata[:redirect_uris].is_a?(Array) || metadata[:redirect_uris].empty?
+
+    metadata
+  end
+
   def get_client(client_id)
     $clients.find { |client| client.client_id == client_id }
   end
@@ -88,6 +124,10 @@ helpers do
   def generate_token
     SecureRandom.urlsafe_base64
   end
+end
+
+get '/' do
+  JSON.pretty_generate($clients.map(&:to_h))
 end
 
 get '/authorize' do
@@ -140,7 +180,7 @@ post '/approve' do
 end
 
 post '/token' do
-  authenticate_client!
+  authenticate_client_for_token!
 
   required_params :grant_type
 
@@ -188,21 +228,13 @@ end
 post '/register' do
   logger.info "params: #{params}"
 
-  client = Client.new(**params.slice(:token_endpoint_auth_method, :grant_types, :response_types, :redirect_uris, :client_name, :client_uri, :logo_uri, :scope))
+  begin
+    metadata = validate_client_metadata!(params)
+  rescue InvalidClientMetadataError
+    halt 400, json(error: 'invalid_client_metadata')
+  end
 
-  client.token_endpoint_auth_method ||= 'client_secret_basic'
-  halt 400, json(error: 'invalid_client_metadata') unless AVAILABLE_TOKEN_ENDPOINT_AUTH_METHODS.include?(client.token_endpoint_auth_method)
-
-  client.grant_types ||= %w[authorization_code]
-  halt 400, json(error: 'invalid_client_metadata') unless client.grant_types.difference(AVAILABLE_GRANT_TYPES).empty?
-
-  client.response_types ||= %w[code]
-  halt 400, json(error: 'invalid_client_metadata') unless client.response_types.difference(AVAILABLE_RESPONSE_TYPES).empty?
-
-  client.response_types << 'code' if client.grant_types.include?('authorization_code') && !client.response_types.include?('code')
-  client.grant_types << 'authorization_code' if client.response_types.include?('code') && !client.grant_types.include?('authorization_code')
-
-  halt 400, json(error: 'invalid_client_metadata') if !client.redirect_uris.is_a?(Array) || client.redirect_uris.empty?
+  client = Client.new(**metadata)
 
   client.client_id = SecureRandom.uuid
   client.client_secret = SecureRandom.urlsafe_base64 if client.token_endpoint_auth_method != 'none'
@@ -210,8 +242,47 @@ post '/register' do
   client.client_id_created_at = Time.now.to_i
   client.client_secret_expires_at = 0
 
+  client.registration_client_uri = "http://#{settings.bind}:#{settings.port}/register/#{client.client_id}"
+  client.registration_access_token = SecureRandom.urlsafe_base64
+
   $clients << client
   logger.info "Registered client: #{client.inspect}"
 
   halt 201, json(client.to_h)
+end
+
+get '/register/:client_id' do
+  authenticate_client_for_metadata!
+
+  halt 200, json(@client.to_h)
+end
+
+put '/register/:client_id' do
+  authenticate_client_for_metadata!
+
+  halt 400, json(error: 'invalid_client_metadata') if params[:client_id] != @client.client_id || params[:client_secret] != @client.client_secret
+
+  begin
+    metadata = validate_client_metadata!(params)
+  rescue InvalidClientMetadataError
+    halt 400, json(error: 'invalid_client_metadata')
+  end
+
+  metadata.each do |key, value|
+    @client[key] = value
+  end
+
+  halt 200, json(@client.to_h)
+end
+
+delete '/register/:client_id' do
+  authenticate_client_for_metadata!
+
+  $clients.delete(@client)
+
+  token_hashes = $db.to_a
+  token_hashes.reject! { |token_hash| token_hash[:client_id] == @client.client_id }
+  $db.replace(*token_hashes)
+
+  halt 204
 end

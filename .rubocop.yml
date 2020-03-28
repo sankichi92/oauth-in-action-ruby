@@ -1,6 +1,9 @@
 Layout/LineLength:
   Max: 160
 
+Layout/MultilineMethodCallIndentation:
+  EnforcedStyle: indented_relative_to_receiver
+
 Metrics/AbcSize:
   Max: 30
 

@@ -40,6 +40,8 @@ Client = Struct.new(
   :scope,
   :client_id_created_at,
   :client_secret_expires_at,
+  :registration_client_uri,
+  :registration_access_token,
   keyword_init: true,
 )
 
@@ -68,6 +70,16 @@ template :index do
         </ul>
         <a href="/authorize">Get OAuth Token</a>
         <a href="/fetch_resource">Get Protected Resource</a>
+        <% if $client.registration_access_token %>
+        <hr>
+        <a href="/read_client">Read Client Information</a>
+        <form method="POST" action="/update_client">
+          <label for="client_name">New Client Name</label>
+          <input type="text" name="client_name" value="<%= $client.client_name %>" id="client_name">
+          <button type="submit">Update</button>
+        </form>
+        <a href="/unregister_client">Unregister Client</a>
+        <% end %>
       </body>
     </html>
   HTML
@@ -179,5 +191,57 @@ get '/fetch_resource' do
     session[:access_token] = nil
     session[:refresh_token] = nil
     halt "Unable to fetch resource: #{response.code} #{response.message}\n#{response.body}"
+  end
+end
+
+get '/read_client' do
+  uri = URI.parse($client.registration_client_uri)
+  http = Net::HTTP.new(uri.host, uri.port)
+  headers = { 'Authorization' => "Bearer #{$client.registration_access_token}" }
+  response = http.get(uri.path, headers)
+
+  case response
+  when Net::HTTPSuccess
+    response.body
+  else
+    "Unable to read client: #{response.code} #{response.message}\n#{response.body}"
+  end
+end
+
+post '/update_client' do
+  uri = URI.parse($client.registration_client_uri)
+  http = Net::HTTP.new(uri.host, uri.port)
+  headers = {
+    'Content-Type' => 'application/json',
+    'Authorization' => "Bearer #{$client.registration_access_token}",
+  }
+  data = $client.to_h
+           .reject { |key,| %i[client_id_created_at client_secret_expires_at registration_client_uri registration_access_token].include?(key) }
+           .merge(client_name: params[:client_name])
+  response = http.put(uri.path, data.to_json, headers)
+
+  case response
+  when Net::HTTPSuccess
+    body = JSON.parse(response.body, symbolize_names: true)
+    $client = Client.new(**body)
+    redirect to('/')
+  else
+    "Unable to update client: #{response.code} #{response.message}\n#{response.body}"
+  end
+end
+
+get '/unregister_client' do
+  uri = URI.parse($client.registration_client_uri)
+  http = Net::HTTP.new(uri.host, uri.port)
+  headers = { 'Authorization' => "Bearer #{$client.registration_access_token}" }
+  response = http.delete(uri.path, headers)
+
+  $client = Client.new
+
+  case response
+  when Net::HTTPSuccess
+    redirect to('/')
+  else
+    "Unable to delete client: #{response.code} #{response.message}\n#{response.body}"
   end
 end

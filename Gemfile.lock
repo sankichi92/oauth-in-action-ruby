@@ -12,6 +12,8 @@ GEM
     parser (2.7.0.4)
       ast (~> 2.4.0)
     rack (2.2.2)
+    rack-contrib (2.1.0)
+      rack (~> 2.0)
     rack-cors (1.1.1)
       rack (>= 2.0.0)
     rack-protection (2.0.8.1)
@@ -48,6 +50,7 @@ PLATFORMS
 
 DEPENDENCIES
   jwt
+  rack-contrib
   rack-cors
   rubocop
   sinatra

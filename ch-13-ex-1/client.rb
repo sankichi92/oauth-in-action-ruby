@@ -5,6 +5,7 @@ require 'net/http'
 require 'securerandom'
 require 'uri'
 
+require 'jwt'
 require 'sinatra'
 require 'sinatra/required_params'
 
@@ -54,8 +55,39 @@ template :index do
   HTML
 end
 
+template :userinfo do
+  <<~HTML
+    <!DOCTYPE html>
+    <html lang="en">
+      <head>
+        <title>Client</title>
+      </head>
+      <body>
+        <dl>
+          <dt>Logged in user subject</dt>
+          <dd>
+            <% if session[:id_token] %>
+            <mark><%= session[:id_token]['sub'] %></mark>
+            from issuer
+            <mark><%= session[:id_token]['iss'] %></mark>
+            <% else %>
+            NONE
+            <% end %>
+          </dd>
+          <dt>User information</dt>
+          <dd>
+            <pre><%= JSON.pretty_generate(session[:userinfo]) %></pre>
+          </dd>
+        </dl>
+        <a href="/authorize">Log In</a>
+        <a href="/userinfo">Get User Information</a>
+      </body>
+    </html>
+  HTML
+end
+
 helpers do
-  def fetch_and_save_access_token!(**params)
+  def fetch_and_save_token!(**params)
     token_uri = URI.parse(TOKEN_ENDPOINT)
     token_uri.user = CLIENT_ID
     token_uri.password = CLIENT_SECRET
@@ -68,6 +100,27 @@ helpers do
 
     session[:access_token] = body['access_token']
     session[:scope] = body['scope']
+
+    return unless body['id_token']
+
+    session[:id_token] = nil
+    session[:userinfo] = nil
+
+    payload, _header = JWT.decode(
+      body['id_token'],
+      OpenSSL::PKey::RSA.new(RSA_KEY),
+      true,
+      {
+        algorithm: 'RS256',
+        iss: 'http://localhost:9001/',
+        aud: CLIENT_ID,
+        verify_iss: true,
+        verify_aud: true,
+        verify_iat: true,
+      },
+    )
+    logger.info "JWT payload: #{payload}"
+    session[:id_token] = payload
   end
 end
 
@@ -98,16 +151,18 @@ get '/callback' do
   halt escape(params[:error]) if params[:error]
 
   begin
-    fetch_and_save_access_token!(
+    fetch_and_save_token!(
       grant_type: 'authorization_code',
       code: params[:code],
       redirect_uri: REDIRECT_URI,
     )
   rescue Net::HTTPExceptions => e
     halt "Unable to fetch access token: #{e.message}\n#{e.response.body}"
+  rescue JWT::DecodeError => e
+    halt "Unable to decode id_token: #{e.inspect}"
   end
 
-  redirect to('/')
+  erb :userinfo
 end
 
 get '/fetch_resource' do
@@ -130,5 +185,21 @@ get '/fetch_resource' do
 end
 
 get '/userinfo' do
+  halt 401, 'Missing access token' if session[:access_token].nil?
 
+  userinfo_uri = URI.parse(USERINFO_ENDPOINT)
+  http = Net::HTTP.new(userinfo_uri.host, userinfo_uri.port)
+  headers = { 'Authorization' => "Bearer #{session[:access_token]}" }
+
+  logger.info "Requesting userinfo with access token: #{session[:access_token]}"
+  response = http.post(userinfo_uri.path, nil, headers)
+
+  case response
+  when Net::HTTPSuccess
+    session[:userinfo] = JSON.parse(response.body, symbolize_names: true)
+    erb :userinfo
+  else
+    session[:access_token] = nil
+    halt "Unable to fetch userinfo: #{response.code} #{response.message}\n#{response.body}"
+  end
 end

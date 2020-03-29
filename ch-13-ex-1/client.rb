@@ -10,13 +10,26 @@ require 'sinatra/required_params'
 
 AUTHORIZATION_ENDPOINT = 'http://localhost:9001/authorize'
 TOKEN_ENDPOINT = 'http://localhost:9001/token'
+USERINFO_ENDPOINT = 'http://localhost:9002/userinfo'
 
 PROTECTED_RESOURCE = 'http://localhost:9002/resource'
 
 CLIENT_ID = 'oauth-client-1'
 CLIENT_SECRET = 'oauth-client-secret-1'
 REDIRECT_URI = 'http://localhost:9000/callback'
-SCOPE = 'foo'
+SCOPE = 'openid profile email phone address'
+
+RSA_KEY = <<~PEM
+  -----BEGIN PUBLIC KEY-----
+  MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA2pZzFsNJZV1pC3TSuD0x
+  YbsjgNN+oM1uGjphK/ZOHfmTS/1dSl2icr1bjV/T+oP8uy/LD5JHOxPvZhf9bgLx
+  BtkBA19jr3l86k/wKQaThVnoeyE1dhUSd9qDvtWDuyzjg78st8Q9/M5Dk7Kzs/Ha
+  VQvZNFkczOnEHGKXWpFKOdlE5WhDLrBFgGeNt+vdvQE9MJGNnPXrRAVDYlkKPpLw
+  L8HtmZqY+BeBUlk1MAMoRBn0PT0qzV2OXJnnev5UM2MO9lyMeWJaHw/7k/Ybf6gG
+  8C/gc0goZwaavToM5bv2qRHckP/PuqfDsdgMGKVXm9GLLz5RqBqvvYLX263e7THY
+  WwIDAQAB
+  -----END PUBLIC KEY-----
+PEM
 
 set :port, 9000
 
@@ -33,7 +46,6 @@ template :index do
         <ul>
           <li>Access token value: <%= session[:access_token] %></li>
           <li>Scope value: <%= session[:scope] %></li>
-          <li>Refresh token value: <%= session[:refresh_token] %></li>
         </ul>
         <a href="/authorize">Get OAuth Token</a>
         <a href="/fetch_resource">Get Protected Resource</a>
@@ -55,14 +67,8 @@ helpers do
     body = JSON.parse(response.body)
 
     session[:access_token] = body['access_token']
-    session[:refresh_token] = body['refresh_token'] if body['refresh_token']
     session[:scope] = body['scope']
   end
-end
-
-before do
-  session[:access_token] ||= '987tghjkiu6trfghjuytrghj'
-  session[:refresh_token] ||= 'j2r3oj32r23rmasd98uhjrk2o3i'
 end
 
 get '/' do
@@ -105,7 +111,7 @@ get '/callback' do
 end
 
 get '/fetch_resource' do
-  halt 401, 'Missing access token' if session[:access_token].nil? && session[:refresh_token].nil?
+  halt 401, 'Missing access token' if session[:access_token].nil?
 
   protected_resource_uri = URI.parse(PROTECTED_RESOURCE)
   http = Net::HTTP.new(protected_resource_uri.host, protected_resource_uri.port)
@@ -114,23 +120,15 @@ get '/fetch_resource' do
   logger.info "Requesting protected resource with access token: #{session[:access_token]}"
   response = http.post(protected_resource_uri.path, nil, headers)
 
-  if response.is_a?(Net::HTTPSuccess)
+  case response
+  when Net::HTTPSuccess
     halt response.body
-  elsif response.is_a?(Net::HTTPUnauthorized) && session[:refresh_token]
-    session[:access_token] = nil
-    begin
-      fetch_and_save_access_token!(
-        grant_type: 'refresh_token',
-        refresh_token: session[:refresh_token],
-      )
-      redirect to('/fetch_resource')
-    rescue Net::HTTPExceptions => e
-      session[:refresh_token] = nil
-      halt "Unable to refresh access token: #{e.message}\n#{e.response.body}"
-    end
   else
     session[:access_token] = nil
-    session[:refresh_token] = nil
     halt "Unable to fetch resource: #{response.code} #{response.message}\n#{response.body}"
   end
+end
+
+get '/userinfo' do
+
 end

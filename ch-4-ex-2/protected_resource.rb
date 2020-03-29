@@ -7,12 +7,12 @@ require_relative '../lib/pseudo_database'
 
 AccessToken = Struct.new(:access_token, :scope)
 
+$db = PseudoDatabase.new(File.expand_path('../oauth-in-action-code/exercises/ch-4-ex-2/database.nosql', __dir__))
+$words = []
+
 set :port, 9002
 
 enable :method_override
-
-$db = PseudoDatabase.new(File.expand_path('../oauth-in-action-code/exercises/ch-4-ex-2/database.nosql', __dir__))
-$words = []
 
 helpers do
   def required_scope(scope)

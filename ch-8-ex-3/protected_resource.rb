@@ -14,9 +14,9 @@ use Rack::Cors do
   end
 end
 
-set :port, 9002
-
 $db = PseudoDatabase.new(File.expand_path('../oauth-in-action-code/exercises/ch-8-ex-3/database.nosql', __dir__))
+
+set :port, 9002
 
 before do
   token = request.env['HTTP_AUTHORIZATION']&.slice(%r{^Bearer +([a-z0-9\-._‾+/]+=*)}i, 1) || params[:access_token]

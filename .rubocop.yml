@@ -5,13 +5,19 @@ Layout/MultilineMethodCallIndentation:
   EnforcedStyle: indented_relative_to_receiver
 
 Metrics/AbcSize:
-  Max: 30
+  Max: 35
 
 Metrics/BlockLength:
   Max: 55
 
+Metrics/CyclomaticComplexity:
+  Max: 12
+
 Metrics/MethodLength:
   Max: 20
+
+Metrics/PerceivedComplexity:
+  Max: 14
 
 Style/GlobalVars:
   Enabled: false

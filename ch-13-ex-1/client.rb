@@ -110,16 +110,8 @@ helpers do
       body['id_token'],
       OpenSSL::PKey::RSA.new(RSA_KEY),
       true,
-      {
-        algorithm: 'RS256',
-        iss: 'http://localhost:9001/',
-        aud: CLIENT_ID,
-        verify_iss: true,
-        verify_aud: true,
-        verify_iat: true,
-      },
+      { algorithm: 'RS256', iss: 'http://localhost:9001/', aud: CLIENT_ID, verify_iss: true, verify_aud: true, verify_iat: true },
     )
-    logger.info "JWT payload: #{payload}"
     session[:id_token] = payload
   end
 end

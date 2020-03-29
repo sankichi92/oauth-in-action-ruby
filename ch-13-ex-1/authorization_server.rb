@@ -144,6 +144,7 @@ helpers do
       iat: now.to_i,
       exp: now.to_i + 5 * 60,
       jti: SecureRandom.alphanumeric(8),
+      nonce: nonce,
     }
 
     rsa_private = OpenSSL::PKey::RSA.new(RSA_KEY)

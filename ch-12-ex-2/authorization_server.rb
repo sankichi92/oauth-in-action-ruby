@@ -101,20 +101,19 @@ helpers do
     metadata = raw_metadata.slice(:token_endpoint_auth_method, :grant_types, :response_types, :redirect_uris, :client_name, :client_uri, :logo_uri, :scope)
 
     metadata[:token_endpoint_auth_method] ||= 'client_secret_basic'
-    raise InvalidClientMetadataError unless AVAILABLE_TOKEN_ENDPOINT_AUTH_METHODS.include?(metadata[:token_endpoint_auth_method])
-
     metadata[:grant_types] ||= %w[authorization_code]
-    raise InvalidClientMetadataError unless metadata[:grant_types].difference(AVAILABLE_GRANT_TYPES).empty?
-
     metadata[:response_types] ||= %w[code]
-    raise InvalidClientMetadataError unless metadata[:response_types].difference(AVAILABLE_RESPONSE_TYPES).empty?
-
     metadata[:response_types] << 'code' if metadata[:grant_types].include?('authorization_code') && !metadata[:response_types].include?('code')
     metadata[:grant_types] << 'authorization_code' if metadata[:response_types].include?('code') && !metadata[:grant_types].include?('authorization_code')
 
-    raise InvalidClientMetadataError if !metadata[:redirect_uris].is_a?(Array) || metadata[:redirect_uris].empty?
-
-    metadata
+    if AVAILABLE_TOKEN_ENDPOINT_AUTH_METHODS.include?(metadata[:token_endpoint_auth_method]) &&
+       metadata[:grant_types].difference(AVAILABLE_GRANT_TYPES).empty? &&
+       metadata[:response_types].difference(AVAILABLE_RESPONSE_TYPES).empty? &&
+       metadata[:redirect_uris].is_a?(Array) && !metadata[:redirect_uris].empty?
+      metadata
+    else
+      false
+    end
   end
 
   def get_client(client_id)
@@ -228,11 +227,8 @@ end
 post '/register' do
   logger.info "params: #{params}"
 
-  begin
-    metadata = validate_client_metadata!(params)
-  rescue InvalidClientMetadataError
-    halt 400, json(error: 'invalid_client_metadata')
-  end
+  metadata = validate_client_metadata!(params)
+  halt 400, json(error: 'invalid_client_metadata') unless metadata
 
   client = Client.new(**metadata)
 

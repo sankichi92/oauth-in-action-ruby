@@ -161,7 +161,7 @@ post '/token' do
         end
       end
     ensure
-      $db.replace(*token_hashes)
+      $db.replace(token_hashes)
     end
   else
     halt 400, json(error: 'unsupported_grant_type')

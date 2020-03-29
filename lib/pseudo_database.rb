@@ -27,7 +27,7 @@ class PseudoDatabase
     end
   end
 
-  def replace(*hashes)
+  def replace(hashes)
     File.open(path, 'w') do |file|
       file.puts(hashes.map(&:to_json))
     end

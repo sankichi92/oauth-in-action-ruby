@@ -161,7 +161,7 @@ post '/token' do
         end
       end
     ensure
-      $db.replace(*token_hashes)
+      $db.replace(token_hashes)
     end
   else
     halt 400, json(error: 'unsupported_grant_type')
@@ -177,7 +177,7 @@ post '/revoke' do
   token_hashes.reject! do |token_hash|
     token_hash[:client_id] == @client.id && token_hash[:access_token] == params[:token]
   end
-  $db.replace(*token_hashes)
+  $db.replace(token_hashes)
 
   halt 204
 end

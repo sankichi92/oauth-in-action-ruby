@@ -218,7 +218,7 @@ post '/token' do
         end
       end
     ensure
-      $db.replace(*token_hashes)
+      $db.replace(token_hashes)
     end
   else
     halt 400, json(error: 'unsupported_grant_type')
@@ -282,7 +282,7 @@ delete '/register/:client_id' do
 
   token_hashes = $db.to_a
   token_hashes.reject! { |token_hash| token_hash[:client_id] == @client.client_id }
-  $db.replace(*token_hashes)
+  $db.replace(token_hashes)
 
   halt 204
 end

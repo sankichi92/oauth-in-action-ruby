@@ -196,7 +196,7 @@ post '/token' do
         end
       end
     ensure
-      $db.replace(*token_hashes)
+      $db.replace(token_hashes)
     end
   when 'client_credentials'
     halt 400, json(error: 'invalid_scope') unless params[:scope].to_s.split.difference(@client.scope).empty?

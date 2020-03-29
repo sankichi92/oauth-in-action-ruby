@@ -135,12 +135,12 @@ helpers do
     SecureRandom.urlsafe_base64
   end
 
-  def generate_jwt(sub:)
+  def generate_id_token(sub:, aud:, nonce: nil)
     now = Time.now
     payload = {
       iss: "http://#{settings.bind}:#{settings.port}/",
       sub: sub,
-      aud: 'http://localhost:9002/',
+      aud: aud,
       iat: now.to_i,
       exp: now.to_i + 5 * 60,
       jti: SecureRandom.alphanumeric(8),
@@ -207,11 +207,17 @@ post '/token' do
 
     code = $codes.delete(params[:code])
     if code && code[:request][:client_id] == @client.id
-      # TODO
       access_token = generate_token
       user = get_user(code[:username])
       $db.insert({ access_token: access_token, client_id: @client.id, scope: code[:scope], user: user.to_h })
-      json access_token: access_token, token_type: 'Bearer', scope: code[:scope].join(' ')
+      response_body = { access_token: access_token, token_type: 'Bearer', scope: code[:scope].join(' ') }
+
+      if code[:scope].include?('openid')
+        id_token = generate_id_token(sub: user.sub, aud: @client.id, nonce: code[:request][:nonce])
+        response_body.merge!(id_token: id_token)
+      end
+
+      json response_body
     else
       halt 400, json(error: 'invalid_grant')
     end

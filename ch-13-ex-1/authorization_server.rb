@@ -10,30 +10,34 @@ require 'sinatra'
 require 'sinatra/json'
 require 'sinatra/required_params'
 
+require_relative '../lib/pseudo_database'
+
 Client = Struct.new(:id, :secret, :redirect_uris, :scope, keyword_init: true)
-User = Struct.new(:sub, :username, keyword_init: true)
+User = Struct.new(:sub, :preferred_username, :name, :email, :email_verified, keyword_init: true)
 
 CLIENTS = [
   Client.new(
     id: 'oauth-client-1',
     secret: 'oauth-client-secret-1',
     redirect_uris: %w[http://localhost:9000/callback],
-    scope: %w[foo bar],
+    scope: %w[openid profile email phone address],
   ),
 ].freeze
 
 USERS = [
   User.new(
     sub: '9XE3-JI34-00132A',
-    username: 'alice',
+    preferred_username: 'alice',
+    name: 'Alice',
+    email: 'alice.wonderland@example.com',
+    email_verified: true,
   ),
   User.new(
     sub: '1ZT5-OE63-57383B',
-    username: 'bob',
-  ),
-  User.new(
-    sub: 'F5Q1-L6LGG-959FS',
-    username: 'carol',
+    preferred_username: 'bob',
+    name: 'Bob',
+    email: 'bob.loblob@example.net',
+    email_verified: false,
   ),
 ].freeze
 
@@ -67,6 +71,7 @@ RSA_KEY = <<~PEM
   -----END RSA PRIVATE KEY-----
 PEM
 
+$db = PseudoDatabase.new(File.expand_path('./database.nosql', __dir__)).tap(&:reset)
 $requests = {}
 $codes = {}
 
@@ -90,7 +95,6 @@ template :approve do
           <select name="username" id="user">
             <option value="alice">Alice</option>
             <option value="bob">Bob</option>
-            <option value="carol">Carol</option>
           </select>
           <p>The client is requesting access to the following:</p>
           <ul>
@@ -124,7 +128,11 @@ helpers do
   end
 
   def get_user(username)
-    USERS.find { |user| user.username == username }
+    USERS.find { |user| user.preferred_username == username }
+  end
+
+  def generate_token
+    SecureRandom.urlsafe_base64
   end
 
   def generate_jwt(sub:)
@@ -199,8 +207,10 @@ post '/token' do
 
     code = $codes.delete(params[:code])
     if code && code[:request][:client_id] == @client.id
+      # TODO
+      access_token = generate_token
       user = get_user(code[:username])
-      access_token = generate_jwt(sub: user.sub)
+      $db.insert({ access_token: access_token, client_id: @client.id, scope: code[:scope], user: user.to_h })
       json access_token: access_token, token_type: 'Bearer', scope: code[:scope].join(' ')
     else
       halt 400, json(error: 'invalid_grant')

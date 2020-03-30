@@ -33,7 +33,6 @@ template :index do
         <ul>
           <li>Access token value: <%= session[:access_token] %></li>
           <li>Scope value: <%= session[:scope] %></li>
-          <li>Refresh token value: <%= session[:refresh_token] %></li>
         </ul>
         <a href="/authorize">Get OAuth Token</a>
         <a href="/fetch_resource">Get Protected Resource</a>
@@ -55,14 +54,8 @@ helpers do
     body = JSON.parse(response.body)
 
     session[:access_token] = body['access_token']
-    session[:refresh_token] = body['refresh_token'] if body['refresh_token']
     session[:scope] = body['scope']
   end
-end
-
-before do
-  session[:access_token] ||= '987tghjkiu6trfghjuytrghj'
-  session[:refresh_token] ||= 'j2r3oj32r23rmasd98uhjrk2o3i'
 end
 
 get '/' do
@@ -105,7 +98,7 @@ get '/callback' do
 end
 
 get '/fetch_resource' do
-  halt 401, 'Missing access token' if session[:access_token].nil? && session[:refresh_token].nil?
+  halt 401, 'Missing access token' if session[:access_token].nil?
 
   protected_resource_uri = URI.parse(PROTECTED_RESOURCE)
   http = Net::HTTP.new(protected_resource_uri.host, protected_resource_uri.port)
@@ -114,23 +107,11 @@ get '/fetch_resource' do
   logger.info "Requesting protected resource with access token: #{session[:access_token]}"
   response = http.post(protected_resource_uri.path, nil, headers)
 
-  if response.is_a?(Net::HTTPSuccess)
+  case response
+  when Net::HTTPSuccess
     halt response.body
-  elsif response.is_a?(Net::HTTPUnauthorized) && session[:refresh_token]
-    session[:access_token] = nil
-    begin
-      fetch_and_save_access_token!(
-        grant_type: 'refresh_token',
-        refresh_token: session[:refresh_token],
-      )
-      redirect to('/fetch_resource')
-    rescue Net::HTTPExceptions => e
-      session[:refresh_token] = nil
-      halt "Unable to refresh access token: #{e.message}\n#{e.response.body}"
-    end
   else
     session[:access_token] = nil
-    session[:refresh_token] = nil
     halt "Unable to fetch resource: #{response.code} #{response.message}\n#{response.body}"
   end
 end

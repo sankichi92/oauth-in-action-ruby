@@ -4,6 +4,7 @@ require 'json'
 require 'net/http'
 require 'uri'
 
+require 'jwt'
 require 'sinatra'
 require 'sinatra/json'
 
@@ -15,22 +16,33 @@ RESOURCE_SECRET = 'protected-resource-secret-1'
 set :port, 9002
 
 before do
-  token = request.env['HTTP_AUTHORIZATION']&.slice(%r{^Bearer +([a-z0-9\-._‾+/]+=*)}i, 1) || params[:access_token]
+  token = request.env['HTTP_AUTHORIZATION']&.slice(/^PoP +(\S+)/i, 1) || params[:pop_access_token]
   logger.info "Incoming token: #{token}"
   halt 401 if token.nil?
+
+  payload, _header = JWT.decode(token, nil, false)
 
   introspection_uri = URI.parse(INTROSPECTION_ENDPOINT)
   introspection_uri.user = RESOURCE_ID
   introspection_uri.password = RESOURCE_SECRET
 
   logger.info 'Introspecting token'
-  response = Net::HTTP.post_form(introspection_uri, { token: token })
+  response = Net::HTTP.post_form(introspection_uri, { token: payload['at'] })
 
   case response
   when Net::HTTPSuccess
     logger.info "Got introspection response: #{response.body}"
-    access_token = JSON.parse(response.body, symbolize_names: true)
-    halt 401 unless access_token[:active]
+    response_body = JSON.parse(response.body, symbolize_names: true)
+    halt 401 unless response_body[:active]
+
+    jwk_loader = ->(_) { { keys: [response_body[:access_token_key]] } }
+    begin
+      payload, _header = JWT.decode(token, nil, true, { algorithm: 'RS256', jwks: jwk_loader })
+      halt 401 if payload['m'] != request.request_method || payload['u'] != "#{request.host}:#{request.port}" || payload['p'] != request.path_info
+    rescue JWT::JWKError, JWT::DecodeError => e
+      logger.info e
+      halt 401
+    end
   else
     halt "Unable to introspect token: #{response.code} #{response.message}\n#{response.body}"
   end

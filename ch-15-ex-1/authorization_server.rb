@@ -1,8 +1,11 @@
 # frozen_string_literal: true
 
+require 'base64'
+require 'openssl'
 require 'securerandom'
 require 'uri'
 
+require 'jwt'
 require 'rack/auth/basic'
 require 'sinatra'
 require 'sinatra/json'
@@ -143,10 +146,18 @@ post '/token' do
 
     code = $codes.delete(params[:code])
     if code && code[:request][:client_id] == @client.id
-      # TODO
+      jwk = JWT::JWK.new(OpenSSL::PKey::RSA.new(2048))
       access_token = generate_token
-      $db.insert({ access_token: access_token, client_id: @client.id, scope: code[:scope] })
-      json access_token: access_token, token_type: 'Bearer', scope: code[:scope].join(' ')
+      key_params = jwk.keypair.params.transform_values { |val| Base64.urlsafe_encode64(val.to_s(2), padding: false) }
+      access_token_key = {
+        kty: 'RSA',
+        n: key_params['n'], e: key_params['e'], d: key_params['d'],
+        p: key_params['p'], q: key_params['q'],
+        dp: key_params['dmp1'], dq: key_params['dmq1'], qi: key_params['iqmp'],
+      }
+
+      $db.insert({ access_token: access_token, access_token_key: jwk.export, client_id: @client.id, scope: code[:scope] })
+      json access_token: access_token, access_token_key: access_token_key, token_type: 'PoP', alg: 'RS256', scope: code[:scope].join(' ')
     else
       halt 400, json(error: 'invalid_grant')
     end
@@ -166,13 +177,13 @@ post '/introspect' do
   token_hash = $db.find { |row| row[:access_token] == params[:token] }
 
   if token_hash
-    # TODO
     json(
       active: true,
       iss: "http://#{settings.bind}:#{settings.port}/",
       aud: 'http://localhost:9002/',
       scope: token_hash[:scope].join(' '),
       client_id: token_hash[:client_id],
+      access_token_key: token_hash[:access_token_key],
     )
   else
     json active: false

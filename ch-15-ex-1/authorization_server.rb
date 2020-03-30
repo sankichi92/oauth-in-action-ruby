@@ -11,7 +11,6 @@ require 'sinatra/required_params'
 require_relative '../lib/pseudo_database'
 
 Client = Struct.new(:id, :secret, :redirect_uris, :scope, keyword_init: true)
-User = Struct.new(:sub, :username, keyword_init: true)
 Resource = Struct.new(:id, :secret, keyword_init: true)
 
 CLIENTS = [
@@ -20,21 +19,6 @@ CLIENTS = [
     secret: 'oauth-client-secret-1',
     redirect_uris: %w[http://localhost:9000/callback],
     scope: %w[foo bar],
-  ),
-].freeze
-
-USERS = [
-  User.new(
-    sub: '9XE3-JI34-00132A',
-    username: 'alice',
-  ),
-  User.new(
-    sub: '1ZT5-OE63-57383B',
-    username: 'bob',
-  ),
-  User.new(
-    sub: 'F5Q1-L6LGG-959FS',
-    username: 'carol',
   ),
 ].freeze
 
@@ -65,12 +49,6 @@ template :approve do
         </ul>
         <form action="/approve" method="POST">
           <input type="hidden" name="request_id" value="<%= @request_id %>">
-          <label for="user">Select user:</label>
-          <select name="username" id="user">
-            <option value="alice">Alice</option>
-            <option value="bob">Bob</option>
-            <option value="carol">Carol</option>
-          </select>
           <p>The client is requesting access to the following:</p>
           <ul>
             <% @scope.each do |scope| %>
@@ -99,10 +77,6 @@ helpers do
 
   def get_protected_resource(resource_id)
     RESOURCES.find { |resource| resource.id == resource_id }
-  end
-
-  def get_user(username)
-    USERS.find { |user| user.username == username }
   end
 
   def generate_token
@@ -138,7 +112,7 @@ post '/approve' do
                    client = get_client(original_params[:client_id])
                    if params[:scope].difference(client.scope).empty?
                      code = SecureRandom.alphanumeric(8)
-                     $codes[code] = { request: original_params, scope: params[:scope], username: params[:username] }
+                     $codes[code] = { request: original_params, scope: params[:scope] }
                      { code: code }
                    else
                      { error: 'invalid_scope' }
@@ -169,8 +143,9 @@ post '/token' do
 
     code = $codes.delete(params[:code])
     if code && code[:request][:client_id] == @client.id
+      # TODO
       access_token = generate_token
-      $db.insert({ access_token: access_token, client_id: @client.id, scope: code[:scope], username: code[:username] })
+      $db.insert({ access_token: access_token, client_id: @client.id, scope: code[:scope] })
       json access_token: access_token, token_type: 'Bearer', scope: code[:scope].join(' ')
     else
       halt 400, json(error: 'invalid_grant')
@@ -191,13 +166,11 @@ post '/introspect' do
   token_hash = $db.find { |row| row[:access_token] == params[:token] }
 
   if token_hash
-    user = get_user(token_hash[:username])
+    # TODO
     json(
       active: true,
       iss: "http://#{settings.bind}:#{settings.port}/",
       aud: 'http://localhost:9002/',
-      sub: user&.sub,
-      username: user&.username,
       scope: token_hash[:scope].join(' '),
       client_id: token_hash[:client_id],
     )

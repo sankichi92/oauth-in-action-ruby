@@ -1,10 +1,13 @@
 # frozen_string_literal: true
 
+require 'base64'
 require 'json'
 require 'net/http'
+require 'openssl'
 require 'securerandom'
 require 'uri'
 
+require 'jwt'
 require 'sinatra'
 require 'sinatra/required_params'
 
@@ -18,6 +21,8 @@ CLIENT_SECRET = 'oauth-client-secret-1'
 REDIRECT_URI = 'http://localhost:9000/callback'
 SCOPE = 'foo'
 
+$keys = {} # Key is too large to save in cookie
+
 set :port, 9000
 
 enable :sessions
@@ -30,10 +35,16 @@ template :index do
         <title>Client</title>
       </head>
       <body>
-        <ul>
-          <li>Access token value: <%= session[:access_token] %></li>
-          <li>Scope value: <%= session[:scope] %></li>
-        </ul>
+        <dl>
+          <dt>Access token</dt>
+          <dd><%= session[:access_token] %></dd>
+          <dt>Scope</dt>
+          <dd><%= session[:scope] %></dd>
+          <dt>Access token key</dt>
+          <dd>
+            <pre><%= JSON.pretty_generate($keys[session[:access_token]]) %></pre>
+          </dd>
+        </dl>
         <a href="/authorize">Get OAuth Token</a>
         <a href="/fetch_resource">Get Protected Resource</a>
       </body>
@@ -51,10 +62,12 @@ helpers do
     response = Net::HTTP.post_form(token_uri, params)
     response.value
 
-    body = JSON.parse(response.body)
+    body = JSON.parse(response.body, symbolize_names: true)
 
-    session[:access_token] = body['access_token']
-    session[:scope] = body['scope']
+    session[:access_token] = body[:access_token]
+    $keys[body[:access_token]] = body[:access_token_key]
+    session[:alg] = body[:alg]
+    session[:scope] = body[:scope]
   end
 end
 
@@ -101,16 +114,34 @@ get '/fetch_resource' do
   halt 401, 'Missing access token' if session[:access_token].nil?
 
   protected_resource_uri = URI.parse(PROTECTED_RESOURCE)
-  http = Net::HTTP.new(protected_resource_uri.host, protected_resource_uri.port)
-  headers = { 'Authorization' => "Bearer #{session[:access_token]}" }
 
-  logger.info "Requesting protected resource with access token: #{session[:access_token]}"
+  payload = {
+    at: session[:access_token],
+    ts: Time.now.to_i,
+    m: 'POST',
+    u: "#{protected_resource_uri.host}:#{protected_resource_uri.port}",
+    p: protected_resource_uri.path,
+  }
+  key_params = $keys[session[:access_token]].transform_values { |val| OpenSSL::BN.new(Base64.urlsafe_decode64(val), 2) }
+  key = OpenSSL::PKey::RSA.new.tap do |rsa| # if session[:key][:kty] == 'RSA'
+    rsa.set_key(key_params[:n], key_params[:e], key_params[:d])
+    rsa.set_factors(key_params[:p], key_params[:q])
+    rsa.set_crt_params(key_params[:dp], key_params[:dq], key_params[:qi])
+  end
+  jwk = JWT::JWK.new(key)
+  token = JWT.encode(payload, jwk.keypair, session[:alg], { typ: 'PoP', kid: jwk.kid })
+
+  http = Net::HTTP.new(protected_resource_uri.host, protected_resource_uri.port)
+  headers = { 'Authorization' => "PoP #{token}" }
+
+  logger.info "Requesting protected resource with PoP token: #{token}"
   response = http.post(protected_resource_uri.path, nil, headers)
 
   case response
   when Net::HTTPSuccess
     halt response.body
   else
+    $keys.delete(session[:access_token])
     session[:access_token] = nil
     halt "Unable to fetch resource: #{response.code} #{response.message}\n#{response.body}"
   end

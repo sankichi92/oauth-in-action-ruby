@@ -35,9 +35,8 @@ before do
     response_body = JSON.parse(response.body, symbolize_names: true)
     halt 401 unless response_body[:active]
 
-    jwk_loader = ->(_) { { keys: [response_body[:access_token_key]] } }
     begin
-      payload, _header = JWT.decode(token, nil, true, { algorithm: 'RS256', jwks: jwk_loader })
+      payload, _header = JWT.decode(token, nil, true, { algorithm: 'RS256', jwks: { keys: [response_body[:access_token_key]] } })
       halt 401 if payload['m'] != request.request_method || payload['u'] != "#{request.host}:#{request.port}" || payload['p'] != request.path_info
     rescue JWT::JWKError, JWT::DecodeError => e
       logger.info e
